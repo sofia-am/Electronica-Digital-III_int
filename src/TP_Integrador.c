@@ -12,6 +12,7 @@
 #include "lpc17xx_timer.h"
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_gpio.h"
+#include "lpc17xx_pwm.h"
 
 #define INPUT 0
 #define OUTPUT 1
@@ -219,4 +220,29 @@ void EINT3_IRQHandler(void)
 	FIO_HalfWordSetValue(PORT(2), LOWER, key);
 
 	GPIO_ClearInt(PORT(0), column); // Limpio flag de interrupción y termino
+}
+
+void configPWM(){
+	PWM_TIMERCFG_Type config;
+	config.PrescaleOption = PWM_TIMER_PRESCALE_USVAL;
+	config.PrescaleValue = 1; //1 useg
+	PWM_MATCHCFG_Type match_config1, match_config0;
+	match_config1.IntOnMatch = DISABLE;
+	match_config1.StopOnMatch = DISABLE;
+	match_config1.ResetOnMatch = ENABLE;
+	match_config1.MatchChannel = 1;
+	match_config0.IntOnMatch = DISABLE;
+	match_config0.StopOnMatch = DISABLE;
+	match_config0.ResetOnMatch = ENABLE;
+	match_config0.MatchChannel = 0;
+
+	PWM_Init(LPC_PWM1, PWM_MODE_TIMER, config);
+	PWM_Cmd(LPC_PWM1, ENABLE);
+	PWM_ConfigMatch(LPC_PWM1, match_config0);
+	PWM_ConfigMatch(LPC_PWM1, match_config1);
+	PWM_MatchUpdate(LPC_PWM1, 0, 1000, PWM_MATCH_UPDATE_NOW); //periodo 1ms
+	PWM_MatchUpdate(LPC_PWM1, 1, 250, PWM_MATCH_UPDATE_NOW); //ancho del pulso 250us
+	PWM_ChannelConfig(LPC_PWM1, 1, PWM_CHANNEL_SINGLE_EDGE);
+	PWM_ChannelCmd(LPC_PWM1, 0, ENABLE);
+	PWM_ChannelCmd(LPC_PWM1, 1, ENABLE);
 }
