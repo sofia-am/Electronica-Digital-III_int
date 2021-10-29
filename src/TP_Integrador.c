@@ -243,6 +243,6 @@ void configPWM(){
 	PWM_MatchUpdate(LPC_PWM1, 0, 1000, PWM_MATCH_UPDATE_NOW); //periodo 1ms
 	PWM_MatchUpdate(LPC_PWM1, 1, 250, PWM_MATCH_UPDATE_NOW); //ancho del pulso 250us
 	PWM_ChannelConfig(LPC_PWM1, 1, PWM_CHANNEL_SINGLE_EDGE);
-	PWM_ChannelCmd(LPC_PWM1, 0, ENABLE);
+	//PWM_ChannelCmd(LPC_PWM1, 0, ENABLE);
 	PWM_ChannelCmd(LPC_PWM1, 1, ENABLE);
 }
