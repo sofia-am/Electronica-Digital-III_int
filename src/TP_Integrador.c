@@ -95,9 +95,9 @@ void configCapture(){
 	config_capture.FallingEdge = DISABLE;
 	config_capture.IntOnCaption = ENABLE;
 
-	TIM_Init(LPC_TIM1, TIM_COUNTER_RISING_MODE, config);
+	TIM_Init(LPC_TIM1, TIM_COUNTER_RISING_MODE, &config);
 	//TIM_ConfigStructInit(TIM_COUNTER_RISING_MODE, config_counter);
-	TIM_ConfigCapture(LPC_TIM1, config_capture);
+	TIM_ConfigCapture(LPC_TIM1, &config_capture);
 	TIM_Cmd(LPC_TIM1, ENABLE);
 
 //----------------------- END OF COUNTER CONFIG---------------------
@@ -111,8 +111,8 @@ void configCapture(){
 	config_match.MatchValue = 100;
 	//con un PR que se incrementa cada 0.1seg*100 = hace match cada 10 segundos
 
-	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, config);
-	TIM_ConfigMatch(LPC_TIM0, config_match);
+	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &config);
+	TIM_ConfigMatch(LPC_TIM0, &config_match);
 	TIM_Cmd(LPC_TIM0, ENABLE);
 
 //----------------------- END OF TIMER CONFIG -------------------------
@@ -236,10 +236,10 @@ void configPWM(){
 	match_config0.ResetOnMatch = ENABLE;
 	match_config0.MatchChannel = 0;
 
-	PWM_Init(LPC_PWM1, PWM_MODE_TIMER, config);
+	PWM_Init(LPC_PWM1, PWM_MODE_TIMER, &config);
 	PWM_Cmd(LPC_PWM1, ENABLE);
-	PWM_ConfigMatch(LPC_PWM1, match_config0);
-	PWM_ConfigMatch(LPC_PWM1, match_config1);
+	PWM_ConfigMatch(LPC_PWM1, &match_config0);
+	PWM_ConfigMatch(LPC_PWM1, &match_config1);
 	PWM_MatchUpdate(LPC_PWM1, 0, 1000, PWM_MATCH_UPDATE_NOW); //periodo 1ms
 	PWM_MatchUpdate(LPC_PWM1, 1, 250, PWM_MATCH_UPDATE_NOW); //ancho del pulso 250us
 	//PWM_ChannelConfig(LPC_PWM1, 1, PWM_CHANNEL_SINGLE_EDGE);
