@@ -25,3 +25,44 @@ int main(void) {
 void configCapture(){
 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void configGPIO()
+{
+
+}
