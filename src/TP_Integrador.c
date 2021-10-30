@@ -9,7 +9,7 @@
 */
 
 #include "lpc17xx.h"
-#include "lpc17xx_timer.h"
+//#include "lpc17xx_timer.h"
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_gpio.h"
 #include "lpc17xx_pwm.h"
@@ -23,13 +23,16 @@
 #define ROWS 4
 #define COLUMNS 4
 #define SIZE 10
+#define IN_TECLADO 0xF
+#define OUT_TECLADO 0xF0
 
 void configUART();
 void configCapture();
 void configDMA();
-void configGPIO();
+void configGPIO(uint8_t, uint32_t, uint8_t);
 void configPWM();
 void configADC();
+uint8_t get_TeclaMatricial(void);
 
 uint8_t pulsaciones;
 uint8_t ppm; //pulsaciones por minuto
@@ -38,40 +41,50 @@ uint8_t resultado;
 uint8_t acum;
 uint8_t index;
 uint8_t flag;
+uint8_t key;
+uint8_t tecla;
 
-/*char keys = {
-	["1", "2", "3", "A"],
-	["4", "5", "6", "B"],
-	["7", "8", "9", "C"],
-	["*", "0", "#", "D2"],
-};*/
+uint8_t keys[16] = { 0x06, 0x5b, 0x4f, 0x77,
+		0x66, 0x6d, 0x7d, 0x7c, 0x07, 0x7f, 0x67, 0x39,'*',
+		0x3f, '#', 0x5e
+};
 
 int main(void) {
 //---- inicializo todo en 0
-	acum = 0;
+	/*acum = 0;
 	resultado = 0;
 	ppm = 0;
 	index = 0;
 	flag = 0;
 	for(int i = 0; i<10; i++){
-		buff[i] = 0;
-	}
+		buffer[i] = 0;
+	}*/
 //-------------------------
+	key = 0;
+	tecla = 0;
 
-	for (uint8_t i = 0; i < 4; i++) // Filas (P0.0-3) como output
-		configGPIO(PORT(0), BIT(i), OUTPUT);
+	for (uint8_t i = 0; i < 4; i++) // Filas (P2.0-3) como input
+		configGPIO(PORT(2), BIT(i), INPUT);
 
-	for (uint8_t i = 4; i < 8; i++) // Columnas (P0.4-7) como input
-		configGPIO(PORT(0), BIT(i), INPUT);
+	for (uint8_t i = 4; i < 8; i++) // Columnas (P2.4-7) como output
+		configGPIO(PORT(2), BIT(i), OUTPUT);
+
+	for (uint8_t i = 0; i < 4; i++)
+	{
+		GPIO_IntCmd(PORT(2), BIT(i), 0);
+		GPIO_ClearInt(PORT(2), BIT(i));
+	}
 
 	for (uint8_t i = 0; i < 7; i++) // Outputs para display 7 segmentos (P2.0-6)
-		configGPIO(PORT(2), BIT(i), OUTPUT);
+		configGPIO(PORT(0), BIT(i), OUTPUT);
+
+	NVIC_EnableIRQ(EINT3_IRQn);
 
 	while (1);
 
     return 0 ;
 }
-
+/*
 void configCapture(){
 	//100Mhz por default
 	//queremos que el timer funcione con una precision de 0,1 seg
@@ -84,12 +97,13 @@ void configCapture(){
 	config.PrescaleOption = TIM_PRESCALE_USVAL;
 	config.PrescaleValue = 100000;
 
-	/*//count control register
+	/*count control register
 	config_counter.CounterOption = TIM_COUNTER_INCAP0;
 	config_counter.CountInputSelect = 0;*/
 	//CAP1.0 -> pin1.18
 
 	//capture control register
+/*
 	config_capture.CaptureChannel = 0;
 	config_capture.RisingEdge = ENABLE;
 	config_capture.FallingEdge = DISABLE;
@@ -122,7 +136,7 @@ void configCapture(){
 	NVIC_SetPriority(TIMER0_IRQn, 5);
 	NVIC_SetPriority(TIMER1_IRQn, 10);
 //tiene mas prioridad la interrupcion por match que por capture
-}
+}*/
 
 void configGPIO(uint8_t port, uint32_t pin, uint8_t dir)
 {
@@ -133,16 +147,35 @@ void configGPIO(uint8_t port, uint32_t pin, uint8_t dir)
 	cfg.Funcnum = 0; // GPIO
 
 	if (port == 2)
-		cfg.Pinmode = PINSEL_PINMODE_PULLUP;
+		cfg.Pinmode = PINSEL_PINMODE_PULLDOWN;
 
-	PINSEL_ConfigPin(&pcfg);
+	PINSEL_ConfigPin(&cfg);
 
 	GPIO_SetDir(port, pin, dir);
 
-	if (dir == OUTPUT)
+	if (dir == OUTPUT && port == 2)
 		GPIO_SetValue(port, pin);
 }
 
+uint8_t get_TeclaMatricial(void)
+{
+	uint8_t fila = 0;
+	uint8_t columna = 0;
+
+	for (columna = 4; columna < 8; columna++)
+	{
+		LPC_GPIO0->FIOPIN0 = (0x01<<columna);
+
+		for (fila = 0; fila < 4; fila++)
+		{
+			if (GPIO_ReadValue(PORT(2)) & BIT(fila))
+				return (4*fila + columna);
+		}
+	}
+
+	return (4*fila + columna);
+}
+/*
 void TIMER1_IRQHandler(){ //interrupcion por evento en CAP1.0
 	pulsaciones++;
 	TIM_ClearIntCapturePending(LPC_TIM1, TIM_CR0_INT);
@@ -174,7 +207,7 @@ void TIMER0_IRQHandler(){ //interrupcion cada 10 segundos
 	//almaceno resultado con DMA
 	acum = 0;
 	pulsaciones = 0;
-}
+}*/
 
 /**
  * @brief Este handler detecta la tecla presionada en el teclado matricial
@@ -186,9 +219,9 @@ void TIMER0_IRQHandler(){ //interrupcion cada 10 segundos
  */
 void EINT3_IRQHandler(void)
 {
-	uint8_t found = 0;
+	/*uint8_t found = 0;
 	uint8_t column = 0;
-	char key;
+
 
 	for (uint8_t row = 0; row < ROWS; row++) // Recorro filas
 	{
@@ -197,7 +230,7 @@ void EINT3_IRQHandler(void)
 			GPIO_ClearValue(PORT(0), BIT(row)); // Fila a 0
 
 			for (uint8_t col = 0; col < COLUMNS; col++) // Recorro columnas
-				if (!GPIO_ReadValue(PORT(0), BIT(4 + col)))
+				if (!(GPIO_ReadValue(PORT(0)) & BIT(4 + col)))
 				{
 					key = keys[row][col]; // Almaceno el valor cuando hallé coincidencia
 
@@ -213,15 +246,22 @@ void EINT3_IRQHandler(void)
 		}
 		else
 			break;
-	}
-
+	}*/
+	tecla = get_TeclaMatricial();
+	key = keys[tecla];
 	// Muestro 'key' por display 7 segmentos
-	FIO_HalfWordClearValue(PORT(2), LOWER, 0xff);
-	FIO_HalfWordSetValue(PORT(2), LOWER, key);
+	FIO_HalfWordClearValue(PORT(0), LOWER, 0xff);
+	FIO_HalfWordSetValue(PORT(0), LOWER, key);
 
-	GPIO_ClearInt(PORT(0), column); // Limpio flag de interrupción y termino
+	for(int i = 0; i < 4; i++){
+		//if(GPIO_GetIntStatus(2, BIT(i), 0) == ENABLE){
+			GPIO_ClearInt(PORT(2), BIT(i));// Limpio flag de interrupción y termino
+			//break;
+		//}
+	}
 }
 
+/*
 void configPWM(){
 	PWM_TIMERCFG_Type config;
 	config.PrescaleOption = PWM_TIMER_PRESCALE_USVAL;
@@ -245,4 +285,4 @@ void configPWM(){
 	//PWM_ChannelConfig(LPC_PWM1, 1, PWM_CHANNEL_SINGLE_EDGE);
 	//PWM_ChannelCmd(LPC_PWM1, 0, ENABLE);
 	PWM_ChannelCmd(LPC_PWM1, 1, ENABLE);
-}
+}*/
