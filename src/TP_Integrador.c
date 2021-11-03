@@ -38,6 +38,7 @@ void EINT3_IRQHandler(void);
 void cfg_capture(void);
 void cfg_pwm(void);
 void set_vel(uint8_t velocidad);
+void stop(void);
 
 uint8_t get_pressed_key(void);
 
@@ -161,11 +162,15 @@ void cfg_gpio(void)
 	 *							        	*
 	 ****************************************/
 	cfg.Portnum = 1;
-	cfg.Pinnum = 18;
+	cfg.Pinnum = 19;
 	cfg.Pinmode = PINSEL_PINMODE_TRISTATE;
-	cfg.Funcnum = 3; // CAP1.0
+	cfg.Funcnum = 3; // CAP1.1
 
 	PINSEL_ConfigPin(&cfg);
+	cfg.Pinnum = 18;
+	cfg.Funcnum = 2;
+	PINSEL_ConfigPin(&cfg); // PWM1.1
+
 }
 
 /**
@@ -227,7 +232,7 @@ void EINT3_IRQHandler(void)
 					on = 0;
 					vel_index = 0;
 
-					//apagar();
+					stop();
 
 					break;
 				}
@@ -237,7 +242,6 @@ void EINT3_IRQHandler(void)
 					//track_init();
 					TIM_Cmd(LPC_TIM1, ENABLE);
 
-					//TIM_Cmd(LPC_TIM0, ENABLE);
 					break;
 				}
 
@@ -467,4 +471,13 @@ void set_vel(uint8_t velocidad){
 		pwm_high = cycle_rate*10;
 		PWM_MatchUpdate(LPC_PWM1, 1, pwm_high, PWM_MATCH_UPDATE_NEXT_RST);
 	}
+}
+
+void stop(void){
+
+	PWM_DeInit(LPC_PWM1);
+
+	TIM_DeInit(LPC_TIM0);
+	TIM_DeInit(LPC_TIM1);
+
 }
