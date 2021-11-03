@@ -40,12 +40,19 @@ uint8_t on = 0; // Flag para encendido
 uint8_t vel_digits[2] = { 0, 0 }; // Arreglo para los dígitos de la velocidad
 uint8_t vel_index = 0; // Índice para el arreglo de velocidad
 uint8_t velocidad = 0;
-uint8_t keys[SIZE] = // Teclas del teclado matricial
+uint8_t keys_hex[SIZE] = // Teclas del teclado matricial
 {
 	0x06, 0x5b, 0x4f, 0x77, // 1 2 3 A
 	0x66, 0x6d, 0x7d, 0x7c, // 4 5 6 B
 	0x07, 0x7f, 0x67, 0x39, // 7 8 9 C
 	0x79, 0x3f, 0x71, 0x5E  // E 0 F D
+};
+uint8_t keys_dec[SIZE] = // Teclas del teclado matricial
+{
+	1, 2, 3, 0, // 1 2 3 X
+	4, 5, 6, 0, // 4 5 6 X
+	7, 8, 9, 0, // 7 8 9 X
+	0, 0, 0, 0  // X 0 X X
 };
 
 uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebote
@@ -165,17 +172,18 @@ void EINT3_IRQHandler(void)
 
 	if (((GPIO_ReadValue(PORT(2)) & 0xf0) - p2aux) == 0)
 	{
-		uint8_t key = keys[get_pressed_key()];
+		uint8_t key = get_pressed_key();
+		uint8_t key_hex = keys_hex[key];
 
 		FIO_HalfWordClearValue(PORT(0), LOWER, 0xff);
-		FIO_HalfWordSetValue(PORT(0), LOWER, key);
+		FIO_HalfWordSetValue(PORT(0), LOWER, key_hex);
 
-		if (key == 0x77) // Si apreté 'A', enciendo la cinta.
+		if (key_hex == 0x77) // Si apreté 'A', enciendo la cinta.
 			on = 1;
 
 		if (on)
 		{
-			switch (key)
+			switch (key_hex)
 			{
 				case 0x77:
 				{
@@ -230,7 +238,7 @@ void EINT3_IRQHandler(void)
 				{
 					if (vel_index < 2)
 					{
-						vel_digits[vel_index] = key; // Almaceno el dígito ingresado
+						vel_digits[vel_index] = keys_dec[key]; // Almaceno el dígito ingresado
 
 						vel_index++;
 					}
