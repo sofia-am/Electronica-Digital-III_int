@@ -205,7 +205,7 @@ void EINT3_IRQHandler(void)
 				case 0x77:
 				{
 					//global_init();
-					gilada++;
+					PWM_Cmd(LPC_PWM1, ENABLE);
 					break;
 				}
 
@@ -234,6 +234,7 @@ void EINT3_IRQHandler(void)
 				{
 					//track_init();
 					TIM_Cmd(LPC_TIM1, ENABLE);
+
 					//TIM_Cmd(LPC_TIM0, ENABLE);
 					break;
 				}
@@ -445,12 +446,9 @@ void cfg_pwm(void){
 	match_config0.MatchChannel = 0;
 
 	PWM_Init(LPC_PWM1, PWM_MODE_TIMER, &config);
-	PWM_Cmd(LPC_PWM1, ENABLE);
 	PWM_ConfigMatch(LPC_PWM1, &match_config0);
 	PWM_ConfigMatch(LPC_PWM1, &match_config1);
 	PWM_MatchUpdate(LPC_PWM1, 0, 1000, PWM_MATCH_UPDATE_NOW); //periodo 1ms
 	PWM_MatchUpdate(LPC_PWM1, 1, 250, PWM_MATCH_UPDATE_NOW); //ancho del pulso 250us
-	//PWM_ChannelConfig(LPC_PWM1, 1, PWM_CHANNEL_SINGLE_EDGE);
-	//PWM_ChannelCmd(LPC_PWM1, 0, ENABLE);
 	PWM_ChannelCmd(LPC_PWM1, 1, ENABLE);
 }
