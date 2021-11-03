@@ -34,7 +34,6 @@
 // Prototipado de funciones
 void cfg_gpio(void);
 void delay(void);
-void EINT3_IRQHandler(void);
 void cfg_capture(void);
 void cfg_pwm(void);
 void set_vel(uint8_t velocidad);
