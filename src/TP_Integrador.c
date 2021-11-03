@@ -35,6 +35,7 @@ void cfg_gpio(void);
 void delay(void);
 void EINT3_IRQHandler(void);
 void cfg_capture();
+
 uint8_t get_pressed_key(void);
 
 // Variables globales
@@ -43,27 +44,27 @@ uint8_t on = 0; // Flag para encendido
 uint8_t vel_digits[2] = { 0, 0 }; // Arreglo para los dígitos de la velocidad
 uint8_t vel_index = 0; // Índice para el arreglo de velocidad
 uint8_t velocidad = 0;
-uint8_t t_actual = 0;
-uint8_t t_final = 0;
-uint8_t t_anterior = 0;
-uint8_t t_index = 0;
-uint8_t t_resultado = 0;
-uint8_t buff[SIZEB];
-uint8_t keys_hex[SIZE] = // Teclas del teclado matricial
+uint8_t t_anterior = 0; // Tiempo de medición anterior (para capture)
+uint8_t t_actual = 0; // Tiempo de medición actual (para capture)
+uint8_t t_final = 0; // Tiempo resultante (para capture)
+uint8_t t_index = 0; // Índice para recorrer el arreglo de mediciones (para capture)
+uint8_t t_resultado = 0; // Promedio de mediciones (para capture)
+uint8_t t_flag = 0;  // Flag para indicar división en promediador móvil (para capture)
+uint8_t buff[SIZEB]; // Buffer con mediciones (para capture)
+uint8_t keys_hex[SIZE] = // Valores en hexadecimal del teclado matricial
 {
 	0x06, 0x5b, 0x4f, 0x77, // 1 2 3 A
 	0x66, 0x6d, 0x7d, 0x7c, // 4 5 6 B
 	0x07, 0x7f, 0x67, 0x39, // 7 8 9 C
 	0x79, 0x3f, 0x71, 0x5E  // E 0 F D
 };
-uint8_t keys_dec[SIZE] = // Teclas del teclado matricial
+uint8_t keys_dec[SIZE] = // Valores en decimal del teclado matricial
 {
 	1, 2, 3, 0, // 1 2 3 X
 	4, 5, 6, 0, // 4 5 6 X
 	7, 8, 9, 0, // 7 8 9 X
 	0, 0, 0, 0  // X 0 X X
 };
-
 uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebote
 
 /**
@@ -74,9 +75,9 @@ int main(void)
 {
 	cfg_gpio();
 	cfg_capture();
-	for(int i = 0; i<10; i++){
-			buff[i] = 0;
-	}
+
+	for (uint8_t i = 0; i < 10; i++)
+		buff[i] = 0;
 
 	while (1);
 
@@ -149,6 +150,18 @@ void cfg_gpio(void)
 	FIO_ClearInt(PORT(2), (0xf << 4));
 
 	NVIC_EnableIRQ(EINT3_IRQn);
+
+	/****************************************
+	 *								        *
+	 *        CONFIGURACIÓN PUERTO 1        *
+	 *							        	*
+	 ****************************************/
+	cfg.Portnum = 1;
+	cfg.Pinnum = 18;
+	cfg.Pinmode = PINSEL_PINMODE_TRISTATE;
+	cfg.Funcnum = 3; // CAP1.0
+
+	PINSEL_ConfigPin(&cfg);
 }
 
 /**
@@ -159,19 +172,8 @@ void cfg_gpio(void)
  * 			Se implementa un antirrebote generado por software.
  * 			Si luego del retardo por software la lectura del
  * 			puerto 2 es la misma (la tecla sigue presionada), se
- * 			interpreta como una pulsación válida.
- * 			Para obtener las filas, se envía un '1' por cada fila
- * 			y se analiza el nibble superior del primer byte del
- * 			puerto 2. Si la fila es la correcta, el '1' debería
- * 			llegar y todas las columnas deberían estar en '1',
- * 			por lo que si el nibble superior del primer byte
- * 			es 0xf, estamos en la fila correcta.
- * 			Para obtener la columna, recorremos la copia almacenada
- * 			hasta encontrar un '0' en alguno de los bits del nibble
- * 			inferior del primer byte.
- * 			Teniendo la fila y la columna, se muestra por el display
- * 			el valor de la tecla resultante mediante la ecuación:
- * 			Key = 4*Row + Column.
+ * 			interpreta como una pulsación válida y se actúa en
+ * 			base a la tecla presionada.
  * 			Finalmente, se limpian las flags de interrupciones y se
  * 			rehabilitan las interrupciones por EINT3.
  */
@@ -230,8 +232,7 @@ void EINT3_IRQHandler(void)
 				{
 					//track_init();
 					TIM_Cmd(LPC_TIM1, ENABLE);
-					TIM_Cmd(LPC_TIM0, ENABLE);
-					gilada--;
+					//TIM_Cmd(LPC_TIM0, ENABLE);
 					break;
 				}
 
@@ -279,6 +280,23 @@ void delay(void)
 	for (uint32_t i = 0; i < TIMER; i++);
 }
 
+/**
+ * @brief Esta función devuelve la coordenada de la tecla pulsada
+ * 		  en el teclado matricial de 4x4.
+ *
+ * @details Para obtener las filas, se envía un '1' por cada fila
+ * 			y se analiza el nibble superior del primer byte del
+ * 			puerto 2. Si la fila es la correcta, el '1' debería
+ * 			llegar y todas las columnas deberían estar en '1',
+ * 			por lo que si el nibble superior del primer byte
+ * 			es 0xf, estamos en la fila correcta.
+ * 			Para obtener la columna, recorremos la copia almacenada
+ * 			hasta encontrar un '0' en alguno de los bits del nibble
+ * 			inferior del primer byte.
+ * 			Teniendo la fila y la columna, se devuelve el valor de
+ * 			la tecla resultante mediante la ecuación:
+ * 			Key = 4*Row + Column.
+ */
 uint8_t get_pressed_key(void)
 {
 	uint8_t row = 0;
@@ -309,65 +327,74 @@ uint8_t get_pressed_key(void)
 			break;
 		}
 
-	return (4*row + col);
+	return ((4 * row) + col);
 }
 
-void cfg_capture(){
-	//100Mhz por default
-	//queremos que el timer funcione con una precision de 0,1 seg
-	//configurar el prescaler para 0.1 seg = 100.000 useg
+/**
+ * @brief Esta función configura el timer 1 en modo capture para
+ * 		  tomar mediciones para el cálculo de la frecuencia cardíaca.
+ */
+void cfg_capture(void)
+{
+	/* 100Mhz por default
+	   Queremos que el timer funcione con una precision de 0.1[s]
+	   Configurar el prescaler para 0.1[s] >> 100000[us] */
 
 	TIM_TIMERCFG_Type config;
-	//TIM_COUNTERCFG_Type config_counter;
 	TIM_CAPTURECFG_Type config_capture;
+	TIM_MATCHCFG_Type config_match;
+
+	/****************************************
+	 *								        *
+	 *      CONFIGURACIÓN DE CAPTURE        *
+	 *							        	*
+	 ****************************************/
 
 	config.PrescaleOption = TIM_PRESCALE_USVAL;
 	config.PrescaleValue = 100000;
 
-	//count control register
-	/*config_counter.CounterOption = TIM_COUNTER_INCAP0;
-	config_counter.CountInputSelect = 0;*/
-	//CAP1.0 -> pin1.18
-
-	//capture control register
-
-	config_capture.CaptureChannel = 0;
+	config_capture.CaptureChannel = 1;
 	config_capture.RisingEdge = ENABLE;
 	config_capture.FallingEdge = DISABLE;
 	config_capture.IntOnCaption = ENABLE;
 
 	TIM_Init(LPC_TIM1, TIM_COUNTER_RISING_MODE, &config);
-	//TIM_ConfigStructInit(TIM_COUNTER_RISING_MODE, config_counter);
 	TIM_ConfigCapture(LPC_TIM1, &config_capture);
 
-//----------------------- END OF COUNTER CONFIG---------------------
+	/****************************************
+	 *								        *
+	 *       CONFIGURACIÓN DE MATCH         *
+	 *							        	*
+	 ****************************************/
 
-	TIM_MATCHCFG_Type config_match;
 	config_match.MatchChannel = 0;
 	config_match.IntOnMatch = ENABLE;
 	config_match.StopOnMatch = DISABLE;
 	config_match.ResetOnMatch = ENABLE;
 	config_match.ExtMatchOutputType = TIM_EXTMATCH_NOTHING;
-	config_match.MatchValue = 100;
-	//con un PR que se incrementa cada 0.1seg*100 = hace match cada 10 segundos
+	config_match.MatchValue = 100; // Hacemos match cada 10 segundos
 
 	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &config);
 	TIM_ConfigMatch(LPC_TIM0, &config_match);
 
-//----------------------- END OF TIMER CONFIG -------------------------
-
+	// Habilitación de interrupciones por timers
 	NVIC_EnableIRQ(TIMER0_IRQn);
-	NIVC_EnableIRQ(TIMER1_IRQn);
+	NVIC_EnableIRQ(TIMER1_IRQn);
+
+	//Seteamos mayor prioridad al match que al capture
 	NVIC_SetPriority(TIMER0_IRQn, 5);
 	NVIC_SetPriority(TIMER1_IRQn, 10);
-//tiene mas prioridad la interrupcion por match que por capture
 }
 
-void TIMER1_IRQHandler() //interrupcion por evento en CAP1.0
+/**
+ * @brief Handler para las interrupciones por capture en CAP1.1.
+ */
+void TIMER1_IRQHandler(void)
 {
 	uint8_t acum = 0;
+
 	t_anterior = t_actual;
-	t_actual = TIM_GetCaptureValue(LPC_TIM1, 0);
+	t_actual = TIM_GetCaptureValue(LPC_TIM1, 1);
 	t_final = t_actual - t_anterior;
 
 	buff[t_index] = t_final;
@@ -377,25 +404,26 @@ void TIMER1_IRQHandler() //interrupcion por evento en CAP1.0
 		t_index = 0;
 
 		if(t_flag == 0)
-			t_flag = 1; //completa la primera vuelta
+			t_flag = 1; // Completa la primera vuelta
 	}
 	else
 		t_index++;
 
-	for(i = 0; i < SIZEB; i++)
+	for (uint8_t i = 0; i < SIZEB; i++)
 		acum += buff[i];
 
 	if(t_flag == 0)
-		t_resultado = acum/t_index;
+		t_resultado = acum / t_index;
 	else
-		t_resultado = acum/SIZEB;
+		t_resultado = acum / SIZEB;
 
-	TIM_ClearIntCapturePending(LPC_TIM1, TIM_CR0_INT);
+	TIM_ClearIntCapturePending(LPC_TIM1, TIM_CR1_INT);
 }
 
-void TIMER0_IRQHandler() //interrupcion cada 10 segundos
+/**
+ * @brief Handler para las interrupciones por match en MAT0.0.
+ */
+void TIMER0_IRQHandler(void)
 {
-
-	//almaceno resultado con DMA
-
+	// Almaceno resultado con DMA
 }
