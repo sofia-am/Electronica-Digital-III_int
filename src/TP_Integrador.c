@@ -35,6 +35,7 @@ void EINT3_IRQHandler(void);
 uint8_t get_pressed_key(void);
 
 // Variables globales
+uint8_t gilada = 0;
 uint8_t on = 0; // Flag para encendido
 uint8_t vel_digits[2] = { 0, 0 }; // Arreglo para los dígitos de la velocidad
 uint8_t vel_index = 0; // Índice para el arreglo de velocidad
@@ -164,18 +165,25 @@ void EINT3_IRQHandler(void)
 
 	if (((GPIO_ReadValue(PORT(2)) & 0xf0) - p2aux) == 0)
 	{
-		uint8_t key = get_pressed_key();
+		uint8_t key = keys[get_pressed_key()];
+
+		FIO_HalfWordClearValue(PORT(0), LOWER, 0xff);
+		FIO_HalfWordSetValue(PORT(0), LOWER, key);
 
 		if (key == 0x77) // Si apreté 'A', enciendo la cinta.
-		{
 			on = 1;
-			//global_init();
-		}
 
 		if (on)
 		{
 			switch (key)
 			{
+				case 0x77:
+				{
+					//global_init();
+					gilada++;
+					break;
+				}
+
 				case 0x7c: // 'B' = Setear velocidad ingresada
 				{
 					velocidad = vel_digits[0]*10 + vel_digits[1];
@@ -200,18 +208,21 @@ void EINT3_IRQHandler(void)
 				case 0x5e: // 'D' = Comenzar a trackear rendimiento
 				{
 					//track_init();
+					gilada--;
 					break;
 				}
 
 				case 0x79: // 'E' = Velocidad++
 				{
 					//set_velocidad(velocidad++);
+					gilada *= 2;
 					break;
 				}
 
 				case 0x71: // 'F' = Velocidad--
 				{
 					//set_velocidad(velocidad--);
+					gilada /= 2;
 					break;
 				}
 
