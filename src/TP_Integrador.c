@@ -12,6 +12,7 @@
 #include "lpc17xx.h"
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_gpio.h"
+#include "lpc17xx_timer.h"
 
 // Definiciones útiles
 #define INPUT 0
@@ -25,6 +26,7 @@
 #define ROWS 4
 #define COLUMNS 4
 #define SIZE (ROWS * COLUMNS)
+#define SIZEB 10
 #define TIMER 600000
 #define MAX_SPEED 15 // [Km/h]
 
@@ -32,6 +34,7 @@
 void cfg_gpio(void);
 void delay(void);
 void EINT3_IRQHandler(void);
+void cfg_capture();
 uint8_t get_pressed_key(void);
 
 // Variables globales
@@ -40,6 +43,12 @@ uint8_t on = 0; // Flag para encendido
 uint8_t vel_digits[2] = { 0, 0 }; // Arreglo para los dígitos de la velocidad
 uint8_t vel_index = 0; // Índice para el arreglo de velocidad
 uint8_t velocidad = 0;
+uint8_t t_actual = 0;
+uint8_t t_final = 0;
+uint8_t t_anterior = 0;
+uint8_t t_index = 0;
+uint8_t t_resultado = 0;
+uint8_t buff[SIZEB];
 uint8_t keys_hex[SIZE] = // Teclas del teclado matricial
 {
 	0x06, 0x5b, 0x4f, 0x77, // 1 2 3 A
@@ -64,6 +73,10 @@ uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebot
 int main(void)
 {
 	cfg_gpio();
+	cfg_capture();
+	for(int i = 0; i<10; i++){
+			buff[i] = 0;
+	}
 
 	while (1);
 
@@ -216,6 +229,8 @@ void EINT3_IRQHandler(void)
 				case 0x5e: // 'D' = Comenzar a trackear rendimiento
 				{
 					//track_init();
+					TIM_Cmd(LPC_TIM1, ENABLE);
+					TIM_Cmd(LPC_TIM0, ENABLE);
 					gilada--;
 					break;
 				}
@@ -295,4 +310,92 @@ uint8_t get_pressed_key(void)
 		}
 
 	return (4*row + col);
+}
+
+void cfg_capture(){
+	//100Mhz por default
+	//queremos que el timer funcione con una precision de 0,1 seg
+	//configurar el prescaler para 0.1 seg = 100.000 useg
+
+	TIM_TIMERCFG_Type config;
+	//TIM_COUNTERCFG_Type config_counter;
+	TIM_CAPTURECFG_Type config_capture;
+
+	config.PrescaleOption = TIM_PRESCALE_USVAL;
+	config.PrescaleValue = 100000;
+
+	//count control register
+	/*config_counter.CounterOption = TIM_COUNTER_INCAP0;
+	config_counter.CountInputSelect = 0;*/
+	//CAP1.0 -> pin1.18
+
+	//capture control register
+
+	config_capture.CaptureChannel = 0;
+	config_capture.RisingEdge = ENABLE;
+	config_capture.FallingEdge = DISABLE;
+	config_capture.IntOnCaption = ENABLE;
+
+	TIM_Init(LPC_TIM1, TIM_COUNTER_RISING_MODE, &config);
+	//TIM_ConfigStructInit(TIM_COUNTER_RISING_MODE, config_counter);
+	TIM_ConfigCapture(LPC_TIM1, &config_capture);
+
+//----------------------- END OF COUNTER CONFIG---------------------
+
+	TIM_MATCHCFG_Type config_match;
+	config_match.MatchChannel = 0;
+	config_match.IntOnMatch = ENABLE;
+	config_match.StopOnMatch = DISABLE;
+	config_match.ResetOnMatch = ENABLE;
+	config_match.ExtMatchOutputType = TIM_EXTMATCH_NOTHING;
+	config_match.MatchValue = 100;
+	//con un PR que se incrementa cada 0.1seg*100 = hace match cada 10 segundos
+
+	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &config);
+	TIM_ConfigMatch(LPC_TIM0, &config_match);
+
+//----------------------- END OF TIMER CONFIG -------------------------
+
+	NVIC_EnableIRQ(TIMER0_IRQn);
+	NIVC_EnableIRQ(TIMER1_IRQn);
+	NVIC_SetPriority(TIMER0_IRQn, 5);
+	NVIC_SetPriority(TIMER1_IRQn, 10);
+//tiene mas prioridad la interrupcion por match que por capture
+}
+
+void TIMER1_IRQHandler() //interrupcion por evento en CAP1.0
+{
+	uint8_t acum = 0;
+	t_anterior = t_actual;
+	t_actual = TIM_GetCaptureValue(LPC_TIM1, 0);
+	t_final = t_actual - t_anterior;
+
+	buff[t_index] = t_final;
+
+	if(t_index == SIZEB)
+	{
+		t_index = 0;
+
+		if(t_flag == 0)
+			t_flag = 1; //completa la primera vuelta
+	}
+	else
+		t_index++;
+
+	for(i = 0; i < SIZEB; i++)
+		acum += buff[i];
+
+	if(t_flag == 0)
+		t_resultado = acum/t_index;
+	else
+		t_resultado = acum/SIZEB;
+
+	TIM_ClearIntCapturePending(LPC_TIM1, TIM_CR0_INT);
+}
+
+void TIMER0_IRQHandler() //interrupcion cada 10 segundos
+{
+
+	//almaceno resultado con DMA
+
 }
