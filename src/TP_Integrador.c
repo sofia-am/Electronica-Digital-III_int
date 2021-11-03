@@ -13,6 +13,7 @@
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_gpio.h"
 #include "lpc17xx_timer.h"
+#include "lpc17xx_pwm.h"
 
 // Definiciones útiles
 #define INPUT 0
@@ -36,11 +37,11 @@ void delay(void);
 void EINT3_IRQHandler(void);
 void cfg_capture(void);
 void cfg_pwm(void);
+void set_vel(uint8_t velocidad);
 
 uint8_t get_pressed_key(void);
 
 // Variables globales
-uint8_t gilada = 0;
 uint8_t on = 0; // Flag para encendido
 uint8_t vel_digits[2] = { 0, 0 }; // Arreglo para los dígitos de la velocidad
 uint8_t vel_index = 0; // Índice para el arreglo de velocidad
@@ -52,6 +53,7 @@ uint8_t t_index = 0; // Índice para recorrer el arreglo de mediciones (para cap
 uint8_t t_resultado = 0; // Promedio de mediciones (para capture)
 uint8_t t_flag = 0;  // Flag para indicar división en promediador móvil (para capture)
 uint8_t buff[SIZEB]; // Buffer con mediciones (para capture)
+uint8_t pwm_high = 0;
 uint8_t keys_hex[SIZE] = // Valores en hexadecimal del teclado matricial
 {
 	0x06, 0x5b, 0x4f, 0x77, // 1 2 3 A
@@ -213,7 +215,7 @@ void EINT3_IRQHandler(void)
 				{
 					velocidad = vel_digits[0]*10 + vel_digits[1];
 
-					//set_vel(velocidad);
+					set_vel(velocidad);
 
 					vel_index = 0;
 
@@ -241,15 +243,19 @@ void EINT3_IRQHandler(void)
 
 				case 0x79: // 'E' = Velocidad++
 				{
-					//set_velocidad(velocidad++);
-					gilada *= 2;
+					velocidad++;
+
+					set_vel(velocidad);
+
 					break;
 				}
 
 				case 0x71: // 'F' = Velocidad--
 				{
-					//set_velocidad(velocidad--);
-					gilada /= 2;
+					velocidad--;
+
+					set_vel(velocidad);
+
 					break;
 				}
 
@@ -451,4 +457,14 @@ void cfg_pwm(void){
 	PWM_MatchUpdate(LPC_PWM1, 0, 1000, PWM_MATCH_UPDATE_NOW); //periodo 1ms
 	PWM_MatchUpdate(LPC_PWM1, 1, 250, PWM_MATCH_UPDATE_NOW); //ancho del pulso 250us
 	PWM_ChannelCmd(LPC_PWM1, 1, ENABLE);
+}
+
+void set_vel(uint8_t velocidad){
+	uint8_t cycle_rate;
+	if(velocidad <= 15)
+	{
+		cycle_rate = velocidad*6; // Regla de 3 para un máximo de 15 Km/h
+		pwm_high = cycle_rate*10;
+		PWM_MatchUpdate(LPC_PWM1, 1, pwm_high, PWM_MATCH_UPDATE_NEXT_RST);
+	}
 }
