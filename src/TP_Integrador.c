@@ -34,7 +34,8 @@
 void cfg_gpio(void);
 void delay(void);
 void EINT3_IRQHandler(void);
-void cfg_capture();
+void cfg_capture(void);
+void cfg_pwm(void);
 
 uint8_t get_pressed_key(void);
 
@@ -75,6 +76,7 @@ int main(void)
 {
 	cfg_gpio();
 	cfg_capture();
+	cfg_pwm();
 
 	for (uint8_t i = 0; i < 10; i++)
 		buff[i] = 0;
@@ -426,4 +428,29 @@ void TIMER1_IRQHandler(void)
 void TIMER0_IRQHandler(void)
 {
 	// Almaceno resultado con DMA
+}
+
+void cfg_pwm(void){
+	PWM_TIMERCFG_Type config;
+	config.PrescaleOption = PWM_TIMER_PRESCALE_USVAL;
+	config.PrescaleValue = 1; //1 useg
+	PWM_MATCHCFG_Type match_config1, match_config0;
+	match_config1.IntOnMatch = DISABLE;
+	match_config1.StopOnMatch = DISABLE;
+	match_config1.ResetOnMatch = ENABLE;
+	match_config1.MatchChannel = 1;
+	match_config0.IntOnMatch = DISABLE;
+	match_config0.StopOnMatch = DISABLE;
+	match_config0.ResetOnMatch = ENABLE;
+	match_config0.MatchChannel = 0;
+
+	PWM_Init(LPC_PWM1, PWM_MODE_TIMER, &config);
+	PWM_Cmd(LPC_PWM1, ENABLE);
+	PWM_ConfigMatch(LPC_PWM1, &match_config0);
+	PWM_ConfigMatch(LPC_PWM1, &match_config1);
+	PWM_MatchUpdate(LPC_PWM1, 0, 1000, PWM_MATCH_UPDATE_NOW); //periodo 1ms
+	PWM_MatchUpdate(LPC_PWM1, 1, 250, PWM_MATCH_UPDATE_NOW); //ancho del pulso 250us
+	//PWM_ChannelConfig(LPC_PWM1, 1, PWM_CHANNEL_SINGLE_EDGE);
+	//PWM_ChannelCmd(LPC_PWM1, 0, ENABLE);
+	PWM_ChannelCmd(LPC_PWM1, 1, ENABLE);
 }
