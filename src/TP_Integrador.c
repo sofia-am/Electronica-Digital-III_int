@@ -26,15 +26,19 @@
 #define COLUMNS 4
 #define SIZE (ROWS * COLUMNS)
 #define TIMER 600000
+#define MAX_SPEED 15 // [Km/h]
 
 // Prototipado de funciones
 void cfg_gpio(void);
 void delay(void);
 void EINT3_IRQHandler(void);
+uint8_t get_pressed_key(void);
 
 // Variables globales
-uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebote
-
+uint8_t on = 0; // Flag para encendido
+uint8_t vel_digits[2] = { 0, 0 }; // Arreglo para los dígitos de la velocidad
+uint8_t vel_index = 0; // Índice para el arreglo de velocidad
+uint8_t velocidad = 0;
 uint8_t keys[SIZE] = // Teclas del teclado matricial
 {
 	0x06, 0x5b, 0x4f, 0x77, // 1 2 3 A
@@ -42,6 +46,8 @@ uint8_t keys[SIZE] = // Teclas del teclado matricial
 	0x07, 0x7f, 0x67, 0x39, // 7 8 9 C
 	0x79, 0x3f, 0x71, 0x5E  // E 0 F D
 };
+
+uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebote
 
 /**
  * @brief Función principal. Acá se configuran
@@ -158,36 +164,72 @@ void EINT3_IRQHandler(void)
 
 	if (((GPIO_ReadValue(PORT(2)) & 0xf0) - p2aux) == 0)
 	{
-		uint8_t row = 0;
+		uint8_t key = get_pressed_key();
 
-		for (uint8_t i = 0; i < ROWS; i++)
+		if (key == 0x77) // Si apreté 'A', enciendo la cinta.
 		{
-			GPIO_SetValue(PORT(2), BIT(i));
-
-			if ((FIO_ByteReadValue(PORT(2), 0) & 0xf0) == 0xf0)
-			{
-				row = i;
-
-				GPIO_ClearValue(PORT(2), BIT(i));
-
-				break;
-			}
-
-			GPIO_ClearValue(PORT(2), BIT(i));
+			on = 1;
+			//global_init();
 		}
 
-		uint8_t col = 0;
-
-		for (uint8_t i = 0; i < COLUMNS; i++)
-			if (!(p2aux & BIT((4 + i))))
+		if (on)
+		{
+			switch (key)
 			{
-				col = i;
+				case 0x7c: // 'B' = Setear velocidad ingresada
+				{
+					velocidad = vel_digits[0]*10 + vel_digits[1];
 
-				break;
+					//set_vel(velocidad);
+
+					vel_index = 0;
+
+					break;
+				}
+
+				case 0x39: // 'C' = Resetear todo y apagar
+				{
+					on = 0;
+					vel_index = 0;
+
+					//apagar();
+
+					break;
+				}
+
+				case 0x5e: // 'D' = Comenzar a trackear rendimiento
+				{
+					//track_init();
+					break;
+				}
+
+				case 0x79: // 'E' = Velocidad++
+				{
+					//set_velocidad(velocidad++);
+					break;
+				}
+
+				case 0x71: // 'F' = Velocidad--
+				{
+					//set_velocidad(velocidad--);
+					break;
+				}
+
+				default: // Cualquier número = Velocidad a setear
+				{
+					if (vel_index < 2)
+					{
+						vel_digits[vel_index] = key; // Almaceno el dígito ingresado
+
+						vel_index++;
+					}
+					else
+						//tirar mensaje de error por uart?
+
+					break;
+				}
 			}
-
-		FIO_HalfWordClearValue(PORT(0), LOWER, 0xff);
-		FIO_HalfWordSetValue(PORT(0), LOWER, keys[((4 * row) + col)]);
+		}
 	}
 
 	FIO_ClearInt(PORT(2), (0xf << 4));
@@ -201,4 +243,37 @@ void EINT3_IRQHandler(void)
 void delay(void)
 {
 	for (uint32_t i = 0; i < TIMER; i++);
+}
+
+uint8_t get_pressed_key(void)
+{
+	uint8_t row = 0;
+
+	for (uint8_t i = 0; i < ROWS; i++)
+	{
+		GPIO_SetValue(PORT(2), BIT(i));
+
+		if ((FIO_ByteReadValue(PORT(2), 0) & 0xf0) == 0xf0)
+		{
+			row = i;
+
+			GPIO_ClearValue(PORT(2), BIT(i));
+
+			break;
+		}
+
+		GPIO_ClearValue(PORT(2), BIT(i));
+	}
+
+	uint8_t col = 0;
+
+	for (uint8_t i = 0; i < COLUMNS; i++)
+		if (!(p2aux & BIT((4 + i))))
+		{
+			col = i;
+
+			break;
+		}
+
+	return (4*row + col);
 }
