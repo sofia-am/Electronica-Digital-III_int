@@ -14,6 +14,7 @@
 #include "lpc17xx_gpio.h"
 #include "lpc17xx_timer.h"
 #include "lpc17xx_pwm.h"
+#include "lpc17xx_uart.h"
 
 // Definiciones útiles
 #define INPUT 0
@@ -36,6 +37,7 @@
 void cfg_gpio(void);
 void cfg_capture(void);
 void cfg_pwm(void);
+void cfg_uart(void);
 void delay(void);
 void stop(void);
 void set_vel(uint8_t velocidad);
@@ -82,12 +84,17 @@ int main(void)
 {
 	cfg_gpio();
 	cfg_capture();
-
+	cfg_uart();
 
 	for (uint8_t i = 0; i < 10; i++)
 		buff[i] = 0;
 
-	while (1);
+	uint8_t info[] = "Hola mundo\t-\tElectr�nica Digital 3\t-\tFCEFyN-UNC \n\r";
+
+	while (1)
+	{
+		UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
+	}
 
     return 0;
 }
@@ -126,6 +133,16 @@ void cfg_gpio(void)
 
 	GPIO_SetDir(PORT(0), 0xff, OUTPUT);
 	GPIO_ClearValue(PORT(0), 0xff);
+
+	cfg.Funcnum = 1;
+	cfg.OpenDrain = 0;
+	cfg.Pinmode = 0;
+	cfg.Pinnum = 10;	//TX
+
+	PINSEL_ConfigPin(&cfg);
+
+	cfg.Pinnum = 11;	//RX
+	PINSEL_ConfigPin(&cfg);
 
 	/****************************************
 	 *								        *
@@ -410,6 +427,22 @@ void cfg_capture(void)
 	//Seteamos mayor prioridad al match que al capture
 	//NVIC_SetPriority(TIMER0_IRQn, 5);
 	NVIC_SetPriority(TIMER1_IRQn, 10);
+}
+
+void cfg_uart(void)
+{
+	UART_CFG_Type UARTConfigStruct;
+	UART_FIFO_CFG_Type UARTFIFOConfigStruct;
+	//configuraci�n por defecto:
+	UART_ConfigStructInit(&UARTConfigStruct);
+	//inicializa perif�rico
+	UART_Init(LPC_UART2, &UARTConfigStruct);
+	UART_FIFOConfigStructInit(&UARTFIFOConfigStruct);
+	//Inicializa FIFO
+	UART_FIFOConfig(LPC_UART2, &UARTFIFOConfigStruct);
+	//Habilita transmisi�n
+	UART_TxCmd(LPC_UART2, ENABLE);
+	return;
 }
 
 /**
