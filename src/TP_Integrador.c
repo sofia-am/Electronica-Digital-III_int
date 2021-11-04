@@ -29,7 +29,7 @@
 #define SIZE (ROWS * COLUMNS)
 #define SIZEB 10
 #define TIMER 600000
-#define MAX_SPEED 15 // [Km/h]
+#define MAX_SPEED 20 // [Km/h]
 #define PWMPRESCALE (25-1)
 
 // Prototipado de funciones
@@ -79,7 +79,7 @@ int main(void)
 {
 	cfg_gpio();
 	cfg_capture();
-	cfg_pwm();
+
 
 	for (uint8_t i = 0; i < 10; i++)
 		buff[i] = 0;
@@ -215,6 +215,7 @@ void EINT3_IRQHandler(void)
 				{
 					//global_init();
 					//PWM_Cmd(LPC_PWM1, ENABLE);
+					cfg_pwm();
 					LPC_PWM1->TCR = (1<<0) | (1<<3); //enable counters and PWM Mode
 
 					break;
@@ -446,12 +447,12 @@ void TIMER0_IRQHandler(void)
 
 void cfg_pwm(void)
 {
-	PWM_TIMERCFG_Type config;
+	/*PWM_TIMERCFG_Type config;
 	PWM_MATCHCFG_Type match_config1, match_config0;
 
 	config.PrescaleOption = PWM_TIMER_PRESCALE_USVAL;
 	config.PrescaleValue = 1; // 1 [us]
-/*
+
 	match_config1.IntOnMatch = DISABLE;
 	match_config1.StopOnMatch = DISABLE;
 	match_config1.ResetOnMatch = ENABLE;
@@ -475,7 +476,7 @@ void cfg_pwm(void)
 	LPC_PWM1->PCR = 0x0; //Select Single Edge PWM - by default its single Edged so this line can be removed
 	LPC_PWM1->PR = PWMPRESCALE; //1 micro-second resolution
 	LPC_PWM1->MR0 = 1000; //1000us = 1ms period duration
-	LPC_PWM1->MR1 = 250; //250us - default pulse duration i.e. width
+	LPC_PWM1->MR1 = 20; //250us - default pulse duration i.e. width
 	LPC_PWM1->MCR = (1<<1); //Reset PWM TC on PWM1MR0 match
 	LPC_PWM1->LER = (1<<1) | (1<<0); //update values in MR0 and MR1
 	LPC_PWM1->PCR = (1<<9); //enable PWM output
@@ -497,13 +498,12 @@ void set_vel(uint8_t velocidad)
 {
 	uint8_t cycle_rate;
 
-	if(velocidad <= 15)
+	if(velocidad <= MAX_SPEED)
 	{
-		cycle_rate = velocidad * 6;
+		cycle_rate = velocidad * 50;
 
-		pwm_high = cycle_rate * 10;
-
-		PWM_MatchUpdate(LPC_PWM1, 1, pwm_high, PWM_MATCH_UPDATE_NEXT_RST);
+		LPC_PWM1->MR1 = cycle_rate; //Update MR1 with new value
+		LPC_PWM1->LER = (1<<1); //Load the MR1 new value at start of next cycle
 	}
 }
 
