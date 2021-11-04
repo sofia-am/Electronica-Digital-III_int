@@ -33,11 +33,11 @@
 
 // Prototipado de funciones
 void cfg_gpio(void);
-void delay(void);
 void cfg_capture(void);
 void cfg_pwm(void);
-void set_vel(uint8_t velocidad);
+void delay(void);
 void stop(void);
+void set_vel(uint8_t velocidad);
 
 uint8_t get_pressed_key(void);
 
@@ -166,8 +166,10 @@ void cfg_gpio(void)
 	cfg.Funcnum = 3; // CAP1.1
 
 	PINSEL_ConfigPin(&cfg);
+
 	cfg.Pinnum = 18;
 	cfg.Funcnum = 2;
+
 	PINSEL_ConfigPin(&cfg); // PWM1.1
 
 }
@@ -201,17 +203,18 @@ void EINT3_IRQHandler(void)
 		FIO_HalfWordClearValue(PORT(0), LOWER, 0xff);
 		FIO_HalfWordSetValue(PORT(0), LOWER, key_hex);
 
-		if (key_hex == 0x77) // Si apreté 'A', enciendo la cinta.
+		if (key_hex == 0x77) // Si apreté 'A', enciendo la cinta
 			on = 1;
 
-		if (on)
+		if (on) // Sólo tomo inputs si la cinta está encendida
 		{
 			switch (key_hex)
 			{
-				case 0x77:
+				case 0x77: // 'A' = Habilitamos PWM
 				{
 					//global_init();
 					PWM_Cmd(LPC_PWM1, ENABLE);
+
 					break;
 				}
 
@@ -270,8 +273,7 @@ void EINT3_IRQHandler(void)
 
 						vel_index++;
 					}
-					else
-						//tirar mensaje de error por uart?
+					//else >> tirar mensaje de error por uart?
 
 					break;
 				}
@@ -307,7 +309,7 @@ void delay(void)
  * 			inferior del primer byte.
  * 			Teniendo la fila y la columna, se devuelve el valor de
  * 			la tecla resultante mediante la ecuación:
- * 			Key = 4*Row + Column.
+ * 			key = (4 * row) + column
  */
 uint8_t get_pressed_key(void)
 {
@@ -440,43 +442,66 @@ void TIMER0_IRQHandler(void)
 	// Almaceno resultado con DMA
 }
 
-void cfg_pwm(void){
+void cfg_pwm(void)
+{
 	PWM_TIMERCFG_Type config;
-	config.PrescaleOption = PWM_TIMER_PRESCALE_USVAL;
-	config.PrescaleValue = 1; //1 useg
 	PWM_MATCHCFG_Type match_config1, match_config0;
+
+	config.PrescaleOption = PWM_TIMER_PRESCALE_USVAL;
+	config.PrescaleValue = 1; // 1 [us]
+
 	match_config1.IntOnMatch = DISABLE;
 	match_config1.StopOnMatch = DISABLE;
 	match_config1.ResetOnMatch = ENABLE;
 	match_config1.MatchChannel = 1;
+
 	match_config0.IntOnMatch = DISABLE;
 	match_config0.StopOnMatch = DISABLE;
 	match_config0.ResetOnMatch = ENABLE;
 	match_config0.MatchChannel = 0;
 
 	PWM_Init(LPC_PWM1, PWM_MODE_TIMER, &config);
+
 	PWM_ConfigMatch(LPC_PWM1, &match_config0);
 	PWM_ConfigMatch(LPC_PWM1, &match_config1);
-	PWM_MatchUpdate(LPC_PWM1, 0, 1000, PWM_MATCH_UPDATE_NOW); //periodo 1ms
-	PWM_MatchUpdate(LPC_PWM1, 1, 250, PWM_MATCH_UPDATE_NOW); //ancho del pulso 250us
+
+	PWM_MatchUpdate(LPC_PWM1, 0, 1000, PWM_MATCH_UPDATE_NOW); // Periodo 1[ms]
+	PWM_MatchUpdate(LPC_PWM1, 1, 250, PWM_MATCH_UPDATE_NOW); // Ancho del pulso 250[us]
+
 	PWM_ChannelCmd(LPC_PWM1, 1, ENABLE);
 }
 
-void set_vel(uint8_t velocidad){
+/**
+ * @brief Esta función se encarga de setear la velocidad
+ * 		  ingresada por teclado.
+ *
+ * @details Se hace una regla de 3 simple para un máximo
+ * 		  	de 15[Km/h], logrando así que si el usuario
+ * 		  	quiere ir a la máxima velocidad, el duty-cycle
+ * 		  	del motor controlado por PWM será del 100%.
+ */
+void set_vel(uint8_t velocidad)
+{
 	uint8_t cycle_rate;
+
 	if(velocidad <= 15)
 	{
-		cycle_rate = velocidad*6; // Regla de 3 para un máximo de 15 Km/h
-		pwm_high = cycle_rate*10;
+		cycle_rate = velocidad * 6;
+
+		pwm_high = cycle_rate * 10;
+
 		PWM_MatchUpdate(LPC_PWM1, 1, pwm_high, PWM_MATCH_UPDATE_NEXT_RST);
 	}
 }
 
-void stop(void){
-
+/**
+ * @brief Esta función se encarga de deshabilitar los periféricos y
+ * 		  resetear las variables necesarias para llevar el equipo a 0.
+ */
+void stop(void)
+{
 	PWM_DeInit(LPC_PWM1);
 
 	TIM_DeInit(LPC_TIM0);
 	TIM_DeInit(LPC_TIM1);
-
 }
