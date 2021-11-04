@@ -52,7 +52,10 @@ uint8_t t_actual = 0; // Tiempo de medición actual (para capture)
 uint8_t t_final = 0; // Tiempo resultante (para capture)
 uint8_t t_index = 0; // Índice para recorrer el arreglo de mediciones (para capture)
 uint8_t t_resultado = 0; // Promedio de mediciones (para capture)
+uint8_t ppm = 0;
 uint8_t t_flag = 0;  // Flag para indicar división en promediador móvil (para capture)
+uint8_t	t_clicks = 0;
+uint8_t	t_clicksb = 0;
 uint8_t buff[SIZEB]; // Buffer con mediciones (para capture)
 uint8_t pwm_high = 0;
 uint8_t keys_hex[SIZE] = // Valores en hexadecimal del teclado matricial
@@ -163,7 +166,7 @@ void cfg_gpio(void)
 	 ****************************************/
 	cfg.Portnum = 1;
 	cfg.Pinnum = 19;
-	cfg.Pinmode = PINSEL_PINMODE_TRISTATE;
+	cfg.Pinmode = PINSEL_PINMODE_PULLUP;
 	cfg.Funcnum = 3; // CAP1.1
 
 	PINSEL_ConfigPin(&cfg);
@@ -245,7 +248,7 @@ void EINT3_IRQHandler(void)
 				case 0x5e: // 'D' = Comenzar a trackear rendimiento
 				{
 					//track_init();
-					//TIM_Cmd(LPC_TIM1, ENABLE);
+					TIM_Cmd(LPC_TIM1, ENABLE);
 
 					break;
 				}
@@ -368,15 +371,15 @@ void cfg_capture(void)
 	 ****************************************/
 
 	config.PrescaleOption = TIM_PRESCALE_USVAL;
-	config.PrescaleValue = 100000;
+	config.PrescaleValue = 100000; //1 mseg
 
 	config_capture.CaptureChannel = 1;
-	config_capture.RisingEdge = ENABLE;
-	config_capture.FallingEdge = DISABLE;
+	config_capture.RisingEdge = DISABLE;
+	config_capture.FallingEdge = ENABLE;
 	config_capture.IntOnCaption = ENABLE;
 
-	TIM_Init(LPC_TIM1, TIM_COUNTER_FALLING_MODE, &config);
-	//TIM_ConfigCapture(LPC_TIM1, &config_capture);
+	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &config);
+	TIM_ConfigCapture(LPC_TIM1, &config_capture);
 
 	/****************************************
 	 *								        *
@@ -395,11 +398,11 @@ void cfg_capture(void)
 	TIM_ConfigMatch(LPC_TIM0, &config_match);
 
 	// Habilitación de interrupciones por timers
-	NVIC_EnableIRQ(TIMER0_IRQn);
+	//NVIC_EnableIRQ(TIMER0_IRQn);
 	NVIC_EnableIRQ(TIMER1_IRQn);
 
 	//Seteamos mayor prioridad al match que al capture
-	NVIC_SetPriority(TIMER0_IRQn, 5);
+	//NVIC_SetPriority(TIMER0_IRQn, 5);
 	NVIC_SetPriority(TIMER1_IRQn, 10);
 }
 
@@ -409,30 +412,37 @@ void cfg_capture(void)
 void TIMER1_IRQHandler(void)
 {
 	uint8_t acum = 0;
+	t_clicksb++;
+	//delay();
 
 	t_anterior = t_actual;
 	t_actual = TIM_GetCaptureValue(LPC_TIM1, 1);
 	t_final = t_actual - t_anterior;
 
-	buff[t_index] = t_final;
+	if(t_final > 1){
+		t_clicks++;
+		buff[t_index] = t_final;
 
-	if(t_index == SIZEB)
-	{
-		t_index = 0;
+		if(t_index == (SIZEB-1))
+		{
+			t_index = 0;
+
+			if(t_flag == 0)
+				t_flag = 1; // Completa la primera vuelta
+		}
+		else
+			t_index++;
+
+		for (uint8_t i = 0; i < SIZEB; i++)
+			acum += buff[i];
 
 		if(t_flag == 0)
-			t_flag = 1; // Completa la primera vuelta
+			t_resultado = acum / (t_index + 1);
+		else
+			t_resultado = acum / SIZEB;
+
+		ppm = 600/t_resultado;
 	}
-	else
-		t_index++;
-
-	for (uint8_t i = 0; i < SIZEB; i++)
-		acum += buff[i];
-
-	if(t_flag == 0)
-		t_resultado = acum / t_index;
-	else
-		t_resultado = acum / SIZEB;
 
 	TIM_ClearIntCapturePending(LPC_TIM1, TIM_CR1_INT);
 }
