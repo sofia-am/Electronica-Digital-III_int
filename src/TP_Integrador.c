@@ -30,6 +30,7 @@
 #define SIZEB 10
 #define TIMER 600000
 #define MAX_SPEED 15 // [Km/h]
+#define PWMPRESCALE (25-1)
 
 // Prototipado de funciones
 void cfg_gpio(void);
@@ -213,7 +214,8 @@ void EINT3_IRQHandler(void)
 				case 0x77: // 'A' = Habilitamos PWM
 				{
 					//global_init();
-					PWM_Cmd(LPC_PWM1, ENABLE);
+					//PWM_Cmd(LPC_PWM1, ENABLE);
+					LPC_PWM1->TCR = (1<<0) | (1<<3); //enable counters and PWM Mode
 
 					break;
 				}
@@ -242,7 +244,7 @@ void EINT3_IRQHandler(void)
 				case 0x5e: // 'D' = Comenzar a trackear rendimiento
 				{
 					//track_init();
-					TIM_Cmd(LPC_TIM1, ENABLE);
+					//TIM_Cmd(LPC_TIM1, ENABLE);
 
 					break;
 				}
@@ -372,8 +374,8 @@ void cfg_capture(void)
 	config_capture.FallingEdge = DISABLE;
 	config_capture.IntOnCaption = ENABLE;
 
-	TIM_Init(LPC_TIM1, TIM_COUNTER_RISING_MODE, &config);
-	TIM_ConfigCapture(LPC_TIM1, &config_capture);
+	TIM_Init(LPC_TIM1, TIM_COUNTER_FALLING_MODE, &config);
+	//TIM_ConfigCapture(LPC_TIM1, &config_capture);
 
 	/****************************************
 	 *								        *
@@ -449,7 +451,7 @@ void cfg_pwm(void)
 
 	config.PrescaleOption = PWM_TIMER_PRESCALE_USVAL;
 	config.PrescaleValue = 1; // 1 [us]
-
+/*
 	match_config1.IntOnMatch = DISABLE;
 	match_config1.StopOnMatch = DISABLE;
 	match_config1.ResetOnMatch = ENABLE;
@@ -468,7 +470,18 @@ void cfg_pwm(void)
 	PWM_MatchUpdate(LPC_PWM1, 0, 1000, PWM_MATCH_UPDATE_NOW); // Periodo 1[ms]
 	PWM_MatchUpdate(LPC_PWM1, 1, 250, PWM_MATCH_UPDATE_NOW); // Ancho del pulso 250[us]
 
-	PWM_ChannelCmd(LPC_PWM1, 1, ENABLE);
+	PWM_ChannelCmd(LPC_PWM1, 1, ENABLE);*/
+
+	LPC_PWM1->PCR = 0x0; //Select Single Edge PWM - by default its single Edged so this line can be removed
+	LPC_PWM1->PR = PWMPRESCALE; //1 micro-second resolution
+	LPC_PWM1->MR0 = 1000; //1000us = 1ms period duration
+	LPC_PWM1->MR1 = 250; //250us - default pulse duration i.e. width
+	LPC_PWM1->MCR = (1<<1); //Reset PWM TC on PWM1MR0 match
+	LPC_PWM1->LER = (1<<1) | (1<<0); //update values in MR0 and MR1
+	LPC_PWM1->PCR = (1<<9); //enable PWM output
+	LPC_PWM1->TCR = (1<<1); //Reset PWM TC & PR
+
+
 }
 
 /**
