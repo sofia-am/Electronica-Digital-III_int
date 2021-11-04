@@ -255,18 +255,24 @@ void EINT3_IRQHandler(void)
 
 				case 0x79: // 'E' = Velocidad++
 				{
-					velocidad++;
+					if(velocidad < MAX_SPEED)
+					{
+						velocidad++;
 
-					set_vel(velocidad);
+						set_vel(velocidad);
+					}
 
 					break;
 				}
 
 				case 0x71: // 'F' = Velocidad--
 				{
-					velocidad--;
+					if(velocidad > 0)
+					{
+						velocidad--;
 
-					set_vel(velocidad);
+						set_vel(velocidad);
+					}
 
 					break;
 				}
@@ -457,36 +463,16 @@ void TIMER0_IRQHandler(void)
 
 void cfg_pwm(void)
 {
-	/*PWM_TIMERCFG_Type config;
-	PWM_MATCHCFG_Type match_config1, match_config0;
-
+	PWM_TIMERCFG_Type config;
 	config.PrescaleOption = PWM_TIMER_PRESCALE_USVAL;
-	config.PrescaleValue = 1; // 1 [us]
-
-	match_config1.IntOnMatch = DISABLE;
-	match_config1.StopOnMatch = DISABLE;
-	match_config1.ResetOnMatch = ENABLE;
-	match_config1.MatchChannel = 1;
-
-	match_config0.IntOnMatch = DISABLE;
-	match_config0.StopOnMatch = DISABLE;
-	match_config0.ResetOnMatch = ENABLE;
-	match_config0.MatchChannel = 0;
+	config.PrescaleValue = 1;
 
 	PWM_Init(LPC_PWM1, PWM_MODE_TIMER, &config);
 
-	PWM_ConfigMatch(LPC_PWM1, &match_config0);
-	PWM_ConfigMatch(LPC_PWM1, &match_config1);
-
-	PWM_MatchUpdate(LPC_PWM1, 0, 1000, PWM_MATCH_UPDATE_NOW); // Periodo 1[ms]
-	PWM_MatchUpdate(LPC_PWM1, 1, 250, PWM_MATCH_UPDATE_NOW); // Ancho del pulso 250[us]
-
-	PWM_ChannelCmd(LPC_PWM1, 1, ENABLE);*/
-
 	LPC_PWM1->PCR = 0x0; //Select Single Edge PWM - by default its single Edged so this line can be removed
-	LPC_PWM1->PR = PWMPRESCALE; //1 micro-second resolution
+	//LPC_PWM1->PR = PWMPRESCALE; //1 micro-second resolution
 	LPC_PWM1->MR0 = 1000; //1000us = 1ms period duration
-	LPC_PWM1->MR1 = 20; //250us - default pulse duration i.e. width
+	LPC_PWM1->MR1 = 1000; //20us - default pulse duration i.e. width
 	LPC_PWM1->MCR = (1<<1); //Reset PWM TC on PWM1MR0 match
 	LPC_PWM1->LER = (1<<1) | (1<<0); //update values in MR0 and MR1
 	LPC_PWM1->PCR = (1<<9); //enable PWM output
@@ -506,11 +492,11 @@ void cfg_pwm(void)
  */
 void set_vel(uint8_t velocidad)
 {
-	uint8_t cycle_rate;
+	uint32_t cycle_rate = 0;
 
 	if(velocidad <= MAX_SPEED)
 	{
-		cycle_rate = velocidad * 50;
+		cycle_rate = velocidad * (50);
 
 		LPC_PWM1->MR1 = cycle_rate; //Update MR1 with new value
 		LPC_PWM1->LER = (1<<1); //Load the MR1 new value at start of next cycle
@@ -523,8 +509,10 @@ void set_vel(uint8_t velocidad)
  */
 void stop(void)
 {
-	PWM_DeInit(LPC_PWM1);
+	set_vel(0);
+	PWM_Cmd(LPC_PWM1, DISABLE);
 
-	TIM_DeInit(LPC_TIM0);
-	TIM_DeInit(LPC_TIM1);
+	TIM_Cmd(LPC_TIM1, DISABLE);
+	TIM_Cmd(LPC_TIM0, DISABLE);
+
 }
