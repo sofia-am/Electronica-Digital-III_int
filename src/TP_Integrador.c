@@ -9,7 +9,6 @@
 */
 
 // Librerías a utilizar
-#include <stdlib.h>
 #include "lpc17xx.h"
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_gpio.h"
@@ -493,14 +492,12 @@ void TIMER0_IRQHandler(void)
 	uint8_t msg3[] = "[Km/h]\n\r";
 
 	uint8_t aux_ppm_u = ppm % 10;
-	uint8_t aux_ppm_d = ppm % 100;
 	char unidades_ppm = aux_ppm_u + 48;
-	char decenas_ppm = ((aux_ppm_d - aux_ppm_u) / 10) + 48;
+	char decenas_ppm = ((ppm - aux_ppm_u) / 10) + 48;
 
 	uint8_t aux_vel_u = velocidad % 10;
-	uint8_t aux_vel_d = velocidad % 100;
 	char unidades_vel = aux_vel_u + 48;
-	char decenas_vel = ((aux_vel_d - aux_vel_u) / 10) + 48;
+	char decenas_vel = ((velocidad - aux_vel_u) / 10) + 48;
 
 	UART_Send(LPC_UART2, msg1, sizeof(msg1), BLOCKING);
 
