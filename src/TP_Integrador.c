@@ -9,8 +9,7 @@
 */
 
 // Librerías a utilizar
-#include <string.h>
-#include <stdio.h>
+#include <stdlib.h>
 #include "lpc17xx.h"
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_gpio.h"
@@ -86,6 +85,7 @@ int main(void)
 {
 	cfg_gpio();
 	cfg_capture();
+	cfg_uart2();
 
 	for (uint8_t i = 0; i < 10; i++)
 		buff[i] = 0;
@@ -218,9 +218,8 @@ void EINT3_IRQHandler(void)
 			{
 				case 0x77: // 'A' = Habilitamos PWM
 				{
-					//global_init();
-					//PWM_Cmd(LPC_PWM1, ENABLE);
 					cfg_pwm();
+
 					LPC_PWM1->TCR = (1<<0) | (1<<3); //enable counters and PWM Mode
 
 					break;
@@ -249,11 +248,10 @@ void EINT3_IRQHandler(void)
 
 				case 0x5e: // 'D' = Comenzar a trackear rendimiento
 				{
-					//track_init();
-
 					TIM_Cmd(LPC_TIM1, ENABLE);
+					TIM_Cmd(LPC_TIM0, ENABLE);
 
-					cfg_uart2();
+					UART_TxCmd(LPC_UART2, ENABLE); // Habilita transmisión
 
 					break;
 				}
@@ -290,7 +288,6 @@ void EINT3_IRQHandler(void)
 
 						vel_index++;
 					}
-					//else >> tirar mensaje de error por uart?
 
 					break;
 				}
@@ -367,7 +364,7 @@ uint8_t get_pressed_key(void)
  */
 void cfg_capture(void)
 {
-	/* 100Mhz por default
+	/* 100[MHz] por default
 	   Queremos que el timer funcione con una precision de 0.1[s]
 	   Configurar el prescaler para 0.1[s] >> 100000[us] */
 
@@ -381,7 +378,7 @@ void cfg_capture(void)
 	 *							        	*
 	 ****************************************/
 	config.PrescaleOption = TIM_PRESCALE_USVAL;
-	config.PrescaleValue = 100000; //1 mseg
+	config.PrescaleValue = 100000; // 1[ms]
 
 	config_capture.CaptureChannel = 1;
 	config_capture.RisingEdge = DISABLE;
@@ -401,20 +398,24 @@ void cfg_capture(void)
 	config_match.StopOnMatch = DISABLE;
 	config_match.ResetOnMatch = ENABLE;
 	config_match.ExtMatchOutputType = TIM_EXTMATCH_NOTHING;
-	config_match.MatchValue = 100; // Hacemos match cada 10 segundos
+	config_match.MatchValue = 100; // Hacemos match cada 10[s]
 
 	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &config);
 	TIM_ConfigMatch(LPC_TIM0, &config_match);
 
 	// Habilitación de interrupciones por timers
-	//NVIC_EnableIRQ(TIMER0_IRQn);
+	NVIC_EnableIRQ(TIMER0_IRQn);
 	NVIC_EnableIRQ(TIMER1_IRQn);
 
 	//Seteamos mayor prioridad al match que al capture
-	//NVIC_SetPriority(TIMER0_IRQn, 5);
+	NVIC_SetPriority(TIMER0_IRQn, 5);
 	NVIC_SetPriority(TIMER1_IRQn, 10);
 }
 
+/**
+ * @brief Esta función setea las configuraciones
+ * 		  por defecto para comunicación por UART2.
+ */
 void cfg_uart2(void)
 {
 	PINSEL_CFG_Type cfg;
@@ -437,7 +438,6 @@ void cfg_uart2(void)
 	UART_Init(LPC_UART2, &UARTConfigStruct);
 	UART_FIFOConfigStructInit(&UARTFIFOConfigStruct);
 	UART_FIFOConfig(LPC_UART2, &UARTFIFOConfigStruct);
-	UART_TxCmd(LPC_UART2, ENABLE); // Habilita transmisión
 }
 
 /**
@@ -478,16 +478,6 @@ void TIMER1_IRQHandler(void)
 			t_resultado = acum / SIZEB;
 
 		ppm = 600 / t_resultado;
-
-		uint8_t msg1[] = "\n-------------------------\n\rPPM = ";
-		uint8_t msg2[] = "\n\rVEL = ";
-		uint8_t msg3[] = "[Km/h]";
-
-		UART_Send(LPC_UART2, msg1, sizeof(msg1), BLOCKING);
-		UART_SendByte(LPC_UART2, ppm);
-		UART_Send(LPC_UART2, msg2, sizeof(msg2), BLOCKING);
-		UART_SendByte(LPC_UART2, velocidad);
-		UART_Send(LPC_UART2, msg3, sizeof(msg3), BLOCKING);
 	}
 
 	TIM_ClearIntCapturePending(LPC_TIM1, TIM_CR1_INT);
@@ -498,25 +488,56 @@ void TIMER1_IRQHandler(void)
  */
 void TIMER0_IRQHandler(void)
 {
-	// Almaceno resultado con DMA
+	uint8_t msg1[] = "-------------------------\n\rPPM = ";
+	uint8_t msg2[] = "\n\rVEL = ";
+	uint8_t msg3[] = "[Km/h]\n\r";
+
+	uint8_t aux_ppm_u = ppm % 10;
+	uint8_t aux_ppm_d = ppm % 100;
+	char unidades_ppm = aux_ppm_u + 48;
+	char decenas_ppm = ((aux_ppm_d - aux_ppm_u) / 10) + 48;
+
+	uint8_t aux_vel_u = velocidad % 10;
+	uint8_t aux_vel_d = velocidad % 100;
+	char unidades_vel = aux_vel_u + 48;
+	char decenas_vel = ((aux_vel_d - aux_vel_u) / 10) + 48;
+
+	UART_Send(LPC_UART2, msg1, sizeof(msg1), BLOCKING);
+
+	if (decenas_ppm != '0')
+		UART_SendByte(LPC_UART2, decenas_ppm);
+
+	UART_SendByte(LPC_UART2, unidades_ppm);
+	UART_Send(LPC_UART2, msg2, sizeof(msg2), BLOCKING);
+
+	if (decenas_vel != '0')
+			UART_SendByte(LPC_UART2, decenas_vel);
+
+	UART_SendByte(LPC_UART2, unidades_vel);
+	UART_Send(LPC_UART2, msg3, sizeof(msg3), BLOCKING);
+
+	TIM_ClearIntCapturePending(LPC_TIM0, TIM_MR0_INT);
 }
 
 void cfg_pwm(void)
 {
 	PWM_TIMERCFG_Type config;
+
 	config.PrescaleOption = PWM_TIMER_PRESCALE_USVAL;
 	config.PrescaleValue = 1;
 
 	PWM_Init(LPC_PWM1, PWM_MODE_TIMER, &config);
 
-	LPC_PWM1->PCR = 0x0; //Select Single Edge PWM - by default its single Edged so this line can be removed
-	//LPC_PWM1->PR = PWMPRESCALE; //1 micro-second resolution
-	LPC_PWM1->MR0 = 1000; //1000us = 1ms period duration
-	LPC_PWM1->MR1 = 1000; //20us - default pulse duration i.e. width
-	LPC_PWM1->MCR = (1<<1); //Reset PWM TC on PWM1MR0 match
-	LPC_PWM1->LER = (1<<1) | (1<<0); //update values in MR0 and MR1
-	LPC_PWM1->PCR = (1<<9); //enable PWM output
-	LPC_PWM1->TCR = (1<<1); //Reset PWM TC & PR
+	LPC_PWM1->PCR = 0x0; // PWM single-edge
+	//LPC_PWM1->PR = PWMPRESCALE; // Resolución de 1[us]
+	LPC_PWM1->MR0 = 1000; // Período de 1[ms]
+	LPC_PWM1->MR1 = 50; // Duración del pulso inicial
+	LPC_PWM1->MCR = (1<<1); // Reseteo del TC del PWM en match con PWM1MR0
+	LPC_PWM1->LER = (1<<1) | (1<<0); // Aplicar valores a MR0 y MR1
+	LPC_PWM1->PCR = (1<<9); // Habilitar output de PWM
+	LPC_PWM1->TCR = (1<<1); // Resteo de TC y PR
+
+	velocidad = 1; // Comenzamos a 1[Km/h]
 }
 
 /**
@@ -524,20 +545,16 @@ void cfg_pwm(void)
  * 		  ingresada por teclado.
  *
  * @details Se hace una regla de 3 simple para un máximo
- * 		  	de 15[Km/h], logrando así que si el usuario
+ * 		  	de 20[Km/h], logrando así que si el usuario
  * 		  	quiere ir a la máxima velocidad, el duty-cycle
  * 		  	del motor controlado por PWM será del 100%.
  */
 void set_vel(uint8_t velocidad)
 {
-	uint32_t cycle_rate = 0;
-
 	if(velocidad <= MAX_SPEED)
 	{
-		cycle_rate = velocidad * (50);
-
-		LPC_PWM1->MR1 = cycle_rate; //Update MR1 with new value
-		LPC_PWM1->LER = (1<<1); //Load the MR1 new value at start of next cycle
+		LPC_PWM1->MR1 = velocidad * 50; //cycle_rate; // Actualiza MR1 con este nuevo valor
+		LPC_PWM1->LER = (1<<1); // Cargamos el nuevo valor de MR1 al comienzo del siguiente ciclo
 	}
 }
 
