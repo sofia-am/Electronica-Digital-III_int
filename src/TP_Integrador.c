@@ -9,6 +9,8 @@
 */
 
 // Librerías a utilizar
+#include <string.h>
+#include <stdio.h>
 #include "lpc17xx.h"
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_gpio.h"
@@ -37,7 +39,7 @@
 void cfg_gpio(void);
 void cfg_capture(void);
 void cfg_pwm(void);
-void cfg_uart(void);
+void cfg_uart2(void);
 void delay(void);
 void stop(void);
 void set_vel(uint8_t velocidad);
@@ -84,17 +86,11 @@ int main(void)
 {
 	cfg_gpio();
 	cfg_capture();
-	cfg_uart();
 
 	for (uint8_t i = 0; i < 10; i++)
 		buff[i] = 0;
 
-	uint8_t info[] = "Hola mundo\t-\tElectr�nica Digital 3\t-\tFCEFyN-UNC \n\r";
-
-	while (1)
-	{
-		UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
-	}
+	while (1);
 
     return 0;
 }
@@ -124,25 +120,15 @@ void cfg_gpio(void)
 	cfg.OpenDrain = PINSEL_PINMODE_NORMAL;
 	cfg.Pinmode = PINSEL_PINMODE_TRISTATE;
 
-	for (uint8_t i = 0; i < 8; i++)
+	for (uint8_t i = 0; i < 7; i++)
 	{
 		cfg.Pinnum = i;
 
 		PINSEL_ConfigPin(&cfg);
 	}
 
-	GPIO_SetDir(PORT(0), 0xff, OUTPUT);
-	GPIO_ClearValue(PORT(0), 0xff);
-
-	cfg.Funcnum = 1;
-	cfg.OpenDrain = 0;
-	cfg.Pinmode = 0;
-	cfg.Pinnum = 10;	//TX
-
-	PINSEL_ConfigPin(&cfg);
-
-	cfg.Pinnum = 11;	//RX
-	PINSEL_ConfigPin(&cfg);
+	GPIO_SetDir(PORT(0), 0x7f, OUTPUT);
+	GPIO_ClearValue(PORT(0), 0x7f);
 
 	/****************************************
 	 *								        *
@@ -192,7 +178,6 @@ void cfg_gpio(void)
 	cfg.Funcnum = 2;
 
 	PINSEL_ConfigPin(&cfg); // PWM1.1
-
 }
 
 /**
@@ -252,7 +237,7 @@ void EINT3_IRQHandler(void)
 					break;
 				}
 
-				case 0x39: // 'C' = Resetear todo y apagar
+				case 0x39: // 'C' = Resetear y apagar
 				{
 					on = 0;
 					vel_index = 0;
@@ -265,7 +250,10 @@ void EINT3_IRQHandler(void)
 				case 0x5e: // 'D' = Comenzar a trackear rendimiento
 				{
 					//track_init();
+
 					TIM_Cmd(LPC_TIM1, ENABLE);
+
+					cfg_uart2();
 
 					break;
 				}
@@ -392,7 +380,6 @@ void cfg_capture(void)
 	 *      CONFIGURACIÓN DE CAPTURE        *
 	 *							        	*
 	 ****************************************/
-
 	config.PrescaleOption = TIM_PRESCALE_USVAL;
 	config.PrescaleValue = 100000; //1 mseg
 
@@ -409,7 +396,6 @@ void cfg_capture(void)
 	 *       CONFIGURACIÓN DE MATCH         *
 	 *							        	*
 	 ****************************************/
-
 	config_match.MatchChannel = 0;
 	config_match.IntOnMatch = ENABLE;
 	config_match.StopOnMatch = DISABLE;
@@ -429,20 +415,29 @@ void cfg_capture(void)
 	NVIC_SetPriority(TIMER1_IRQn, 10);
 }
 
-void cfg_uart(void)
+void cfg_uart2(void)
 {
+	PINSEL_CFG_Type cfg;
+
+	cfg.Portnum = PORT(0);
+	cfg.Pinnum = 10; // TX
+	cfg.Funcnum = 1;
+	cfg.Pinmode = PINSEL_PINMODE_PULLUP;
+
+	PINSEL_ConfigPin(&cfg);
+
+	cfg.Pinnum = 11; // RX
+
+	PINSEL_ConfigPin(&cfg);
+
 	UART_CFG_Type UARTConfigStruct;
 	UART_FIFO_CFG_Type UARTFIFOConfigStruct;
-	//configuraci�n por defecto:
-	UART_ConfigStructInit(&UARTConfigStruct);
-	//inicializa perif�rico
+
+	UART_ConfigStructInit(&UARTConfigStruct); // Configuración por defecto
 	UART_Init(LPC_UART2, &UARTConfigStruct);
 	UART_FIFOConfigStructInit(&UARTFIFOConfigStruct);
-	//Inicializa FIFO
 	UART_FIFOConfig(LPC_UART2, &UARTFIFOConfigStruct);
-	//Habilita transmisi�n
-	UART_TxCmd(LPC_UART2, ENABLE);
-	return;
+	UART_TxCmd(LPC_UART2, ENABLE); // Habilita transmisión
 }
 
 /**
@@ -451,15 +446,17 @@ void cfg_uart(void)
 void TIMER1_IRQHandler(void)
 {
 	uint8_t acum = 0;
+
 	t_clicksb++;
-	//delay();
 
 	t_anterior = t_actual;
 	t_actual = TIM_GetCaptureValue(LPC_TIM1, 1);
 	t_final = t_actual - t_anterior;
 
-	if(t_final > 1){
+	if(t_final > 1)
+	{
 		t_clicks++;
+
 		buff[t_index] = t_final;
 
 		if(t_index == (SIZEB-1))
@@ -480,7 +477,17 @@ void TIMER1_IRQHandler(void)
 		else
 			t_resultado = acum / SIZEB;
 
-		ppm = 600/t_resultado;
+		ppm = 600 / t_resultado;
+
+		uint8_t msg1[] = "\n-------------------------\n\rPPM = ";
+		uint8_t msg2[] = "\n\rVEL = ";
+		uint8_t msg3[] = "[Km/h]";
+
+		UART_Send(LPC_UART2, msg1, sizeof(msg1), BLOCKING);
+		UART_SendByte(LPC_UART2, ppm);
+		UART_Send(LPC_UART2, msg2, sizeof(msg2), BLOCKING);
+		UART_SendByte(LPC_UART2, velocidad);
+		UART_Send(LPC_UART2, msg3, sizeof(msg3), BLOCKING);
 	}
 
 	TIM_ClearIntCapturePending(LPC_TIM1, TIM_CR1_INT);
@@ -510,8 +517,6 @@ void cfg_pwm(void)
 	LPC_PWM1->LER = (1<<1) | (1<<0); //update values in MR0 and MR1
 	LPC_PWM1->PCR = (1<<9); //enable PWM output
 	LPC_PWM1->TCR = (1<<1); //Reset PWM TC & PR
-
-
 }
 
 /**
@@ -543,9 +548,11 @@ void set_vel(uint8_t velocidad)
 void stop(void)
 {
 	set_vel(0);
+
 	PWM_Cmd(LPC_PWM1, DISABLE);
 
 	TIM_Cmd(LPC_TIM1, DISABLE);
 	TIM_Cmd(LPC_TIM0, DISABLE);
 
+	UART_TxCmd(LPC_UART2, DISABLE);
 }
