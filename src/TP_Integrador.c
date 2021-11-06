@@ -15,6 +15,7 @@
 #include "lpc17xx_timer.h"
 #include "lpc17xx_pwm.h"
 #include "lpc17xx_uart.h"
+#include "lpc17xx_adc.h"
 
 // Definiciones útiles
 #define INPUT 0
@@ -38,6 +39,7 @@ void cfg_gpio(void);
 void cfg_capture(void);
 void cfg_pwm(void);
 void cfg_uart2(void);
+void cfg_adc(void);
 void delay(void);
 void stop(void);
 void set_vel(uint8_t velocidad);
@@ -85,6 +87,7 @@ int main(void)
 	cfg_gpio();
 	cfg_capture();
 	cfg_uart2();
+	cfg_adc();
 
 	for (uint8_t i = 0; i < 10; i++)
 		buff[i] = 0;
@@ -250,7 +253,7 @@ void EINT3_IRQHandler(void)
 					TIM_Cmd(LPC_TIM1, ENABLE);
 					TIM_Cmd(LPC_TIM0, ENABLE);
 
-					UART_TxCmd(LPC_UART2, ENABLE); // Habilita transmisión
+					UART_TxCmd(LPC_UART2, ENABLE); // Habilita transmisión por UART
 
 					break;
 				}
@@ -569,4 +572,9 @@ void stop(void)
 	TIM_Cmd(LPC_TIM0, DISABLE);
 
 	UART_TxCmd(LPC_UART2, DISABLE);
+}
+
+void cfg_adc(void)
+{
+
 }
