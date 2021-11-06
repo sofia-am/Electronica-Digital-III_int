@@ -15,7 +15,6 @@
 #include "lpc17xx_timer.h"
 #include "lpc17xx_pwm.h"
 #include "lpc17xx_uart.h"
-#include "lpc17xx_adc.h"
 
 // Definiciones útiles
 #define INPUT 0
@@ -39,7 +38,6 @@ void cfg_gpio(void);
 void cfg_timers(void);
 void cfg_pwm(void);
 void cfg_uart2(void);
-void cfg_adc(void);
 void delay(void);
 void stop(void);
 void set_vel(uint8_t velocidad);
@@ -77,7 +75,7 @@ uint8_t keys_dec[SIZE] = // Valores en decimal del teclado matricial
 	0, 0, 0, 0  // X 0 X X
 };
 uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebote
-uint32_t temperatura = 0;
+
 /**
  * @brief Función principal. Acá se configuran
  * 		  todos los periféricos.
@@ -87,7 +85,6 @@ int main(void)
 	cfg_gpio();
 	cfg_timers();
 	cfg_uart2();
-	cfg_adc();
 
 	for (uint8_t i = 0; i < 10; i++)
 		buff[i] = 0;
@@ -169,10 +166,10 @@ void cfg_gpio(void)
 	 *        CONFIGURACIÓN PUERTO 1        *
 	 *							        	*
 	 ****************************************/
-	cfg.Portnum = 0;
-	cfg.Pinnum = 24;
+	cfg.Portnum = 1;
+	cfg.Pinnum = 19;
 	cfg.Pinmode = PINSEL_PINMODE_PULLUP;
-	cfg.Funcnum = 3; // CAP3.1
+	cfg.Funcnum = 3; // CAP1.1
 
 	PINSEL_ConfigPin(&cfg);
 
@@ -250,11 +247,10 @@ void EINT3_IRQHandler(void)
 
 				case 0x5e: // 'D' = Comenzar a trackear rendimiento
 				{
-					TIM_Cmd(LPC_TIM1, ENABLE);
-					TIM_Cmd(LPC_TIM0, ENABLE); // Habilita la transmision serie Y habilita la conversion AD
 					TIM_Cmd(LPC_TIM3, ENABLE);
+					TIM_Cmd(LPC_TIM0, ENABLE);
 
-					UART_TxCmd(LPC_UART2, ENABLE); // Habilita transmisión por UART
+					UART_TxCmd(LPC_UART2, ENABLE); // Habilita transmisión
 
 					break;
 				}
@@ -367,6 +363,16 @@ uint8_t get_pressed_key(void)
  */
 void cfg_timers(void)
 {
+	PINSEL_CFG_Type cfg;
+
+	cfg.Portnum = 0;
+	cfg.Pinnum = 24;
+	cfg.Pinmode = PINSEL_PINMODE_PULLUP;
+	cfg.Funcnum = 3; // Función de CAP3.1
+	cfg.OpenDrain = PINSEL_PINMODE_NORMAL;
+
+	PINSEL_ConfigPin(&cfg);
+
 	/* 100[MHz] por default
 	   Queremos que el timer funcione con una precision de 0.1[s]
 	   Configurar el prescaler para 0.1[s] >> 100000[us] */
@@ -393,7 +399,7 @@ void cfg_timers(void)
 
 	/****************************************
 	 *								        *
-	 *       CONFIGURACIÓN DE MATCH 0.0     *
+	 *       CONFIGURACIÓN DE MATCH         *
 	 *							        	*
 	 ****************************************/
 	config_match.MatchChannel = 0;
@@ -406,24 +412,8 @@ void cfg_timers(void)
 	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &config);
 	TIM_ConfigMatch(LPC_TIM0, &config_match);
 
-	/****************************************
-	 *								        *
-	 *       CONFIGURACIÓN DE MATCH 1.0     *
-	 *							        	*
-	 ****************************************/
-	config_match.MatchChannel = 0;
-	config_match.IntOnMatch = DISABLE;
-	config_match.StopOnMatch = DISABLE;
-	config_match.ResetOnMatch = ENABLE;
-	config_match.ExtMatchOutputType = TIM_EXTMATCH_TOGGLE;
-	config_match.MatchValue = 150; // Hacemos match cada 15[s], nuestra conversion se inicia cada 30[s]
-
-	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &config);
-	TIM_ConfigMatch(LPC_TIM1, &config_match);
-
 	// Habilitación de interrupciones por timers
 	NVIC_EnableIRQ(TIMER0_IRQn);
-	NVIC_EnableIRQ(TIMER1_IRQn);
 	NVIC_EnableIRQ(TIMER3_IRQn);
 
 	//Seteamos mayor prioridad al match que al capture
@@ -509,9 +499,7 @@ void TIMER0_IRQHandler(void)
 {
 	uint8_t msg1[] = "-------------------------\n\rPPM = ";
 	uint8_t msg2[] = "\n\rVEL = ";
-	uint8_t msg3[] = "[Km/h]";
-	uint8_t msg4[] = "\n\rTEMP = ";
-	uint8_t msg5[] = "°C\n\r";
+	uint8_t msg3[] = "[Km/h]\n\r";
 
 	uint8_t aux_ppm_u = ppm % 10;
 	char unidades_ppm = aux_ppm_u + 48;
@@ -520,10 +508,6 @@ void TIMER0_IRQHandler(void)
 	uint8_t aux_vel_u = velocidad % 10;
 	char unidades_vel = aux_vel_u + 48;
 	char decenas_vel = ((velocidad - aux_vel_u) / 10) + 48;
-
-	uint8_t aux_tmp_u = temperatura % 10;
-	char unidades_tmp = aux_tmp_u + 48;
-	char decenas_tmp = ((temperatura - aux_tmp_u) / 10) + 48;
 
 	UART_Send(LPC_UART2, msg1, sizeof(msg1), BLOCKING);
 
@@ -538,14 +522,6 @@ void TIMER0_IRQHandler(void)
 
 	UART_SendByte(LPC_UART2, unidades_vel);
 	UART_Send(LPC_UART2, msg3, sizeof(msg3), BLOCKING);
-
-	UART_Send(LPC_UART2, msg4, sizeof(msg4), BLOCKING);
-
-	if (decenas_tmp != '0')
-			UART_SendByte(LPC_UART2, decenas_tmp);
-
-	UART_SendByte(LPC_UART2, unidades_tmp);
-	UART_Send(LPC_UART2, msg5, sizeof(msg5), BLOCKING);
 
 	TIM_ClearIntCapturePending(LPC_TIM0, TIM_MR0_INT);
 }
@@ -602,37 +578,4 @@ void stop(void)
 	TIM_Cmd(LPC_TIM0, DISABLE);
 
 	UART_TxCmd(LPC_UART2, DISABLE);
-
-	ADC_ChannelCmd(LPC_ADC, 0, DISABLE);
-}
-
-void cfg_adc(void)
-{
-	PINSEL_CFG_Type cfg;
-
-	cfg.Portnum = 0;
-	cfg.Pinnum = 23;
-	cfg.Funcnum = 1;	//Funcion AD0.0
-	cfg.OpenDrain = PINSEL_PINMODE_NORMAL;
-	cfg.Pinmode = PINSEL_PINMODE_TRISTATE;
-
-	PINSEL_ConfigPin(&cfg);
-
-	ADC_Init(LPC_ADC, 200000);
-	ADC_StartCmd(LPC_ADC, ADC_START_ON_MAT10);
-	ADC_ChannelCmd(LPC_ADC, 0, ENABLE);
-	ADC_EdgeStartConfig(LPC_ADC, ADC_START_ON_RISING);
-	ADC_IntConfig(LPC_ADC, ADC_ADGINTEN, SET);
-
-	NVIC_EnableIRQ(ADC_IRQn);
-}
-
-void ADC_IRQHandler(void)
-{
-	if(ADC_ChannelGetStatus(LPC_ADC, 0, 1))
-	{
-		uint32_t medicion = ADC_ChannelGetData(LPC_ADC, 0);
-
-		temperatura = (medicion*0.08); // (3.3)/(4096*0.01)
-	}
 }
