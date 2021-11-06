@@ -36,7 +36,7 @@
 
 // Prototipado de funciones
 void cfg_gpio(void);
-void cfg_capture(void);
+void cfg_timers(void);
 void cfg_pwm(void);
 void cfg_uart2(void);
 void cfg_adc(void);
@@ -77,7 +77,7 @@ uint8_t keys_dec[SIZE] = // Valores en decimal del teclado matricial
 	0, 0, 0, 0  // X 0 X X
 };
 uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebote
-
+uint32_t temperatura = 0;
 /**
  * @brief Función principal. Acá se configuran
  * 		  todos los periféricos.
@@ -85,7 +85,7 @@ uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebot
 int main(void)
 {
 	cfg_gpio();
-	cfg_capture();
+	cfg_timers();
 	cfg_uart2();
 	cfg_adc();
 
@@ -131,6 +131,14 @@ void cfg_gpio(void)
 
 	GPIO_SetDir(PORT(0), 0x7f, OUTPUT);
 	GPIO_ClearValue(PORT(0), 0x7f);
+
+	cfg.Pinnum = 23;
+	cfg.Funcnum = 1;	//Funcion AD0.0
+	cfg.OpenDrain = PINSEL_PINMODE_NORMAL;
+	cfg.Pinmode = PINSEL_PINMODE_TRISTATE;
+
+	PINSEL_ConfigPin(&cfg);
+	GPIO_SetDir(0, (1<<23), INPUT); //puerto 0, pin 23 como entrada
 
 	/****************************************
 	 *								        *
@@ -251,7 +259,7 @@ void EINT3_IRQHandler(void)
 				case 0x5e: // 'D' = Comenzar a trackear rendimiento
 				{
 					TIM_Cmd(LPC_TIM1, ENABLE);
-					TIM_Cmd(LPC_TIM0, ENABLE);
+					TIM_Cmd(LPC_TIM0, ENABLE); // Habilita la transmision serie Y habilita la conversion AD
 
 					UART_TxCmd(LPC_UART2, ENABLE); // Habilita transmisión por UART
 
@@ -364,7 +372,7 @@ uint8_t get_pressed_key(void)
  * @brief Esta función configura el timer 1 en modo capture para
  * 		  tomar mediciones para el cálculo de la frecuencia cardíaca.
  */
-void cfg_capture(void)
+void cfg_timers(void)
 {
 	/* 100[MHz] por default
 	   Queremos que el timer funcione con una precision de 0.1[s]
@@ -392,7 +400,7 @@ void cfg_capture(void)
 
 	/****************************************
 	 *								        *
-	 *       CONFIGURACIÓN DE MATCH         *
+	 *       CONFIGURACIÓN DE MATCH 0.0     *
 	 *							        	*
 	 ****************************************/
 	config_match.MatchChannel = 0;
@@ -401,6 +409,21 @@ void cfg_capture(void)
 	config_match.ResetOnMatch = ENABLE;
 	config_match.ExtMatchOutputType = TIM_EXTMATCH_NOTHING;
 	config_match.MatchValue = 100; // Hacemos match cada 10[s]
+
+	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &config);
+	TIM_ConfigMatch(LPC_TIM0, &config_match);
+
+	/****************************************
+	 *								        *
+	 *       CONFIGURACIÓN DE MATCH 0.1     *
+	 *							        	*
+	 ****************************************/
+	config_match.MatchChannel = 1;
+	config_match.IntOnMatch = DISABLE;
+	config_match.StopOnMatch = DISABLE;
+	config_match.ResetOnMatch = ENABLE;
+	config_match.ExtMatchOutputType = TIM_EXTMATCH_TOGGLE;
+	config_match.MatchValue = 150; // Hacemos match cada 15[s], nuestra conversion se inicia cada 30[s]
 
 	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &config);
 	TIM_ConfigMatch(LPC_TIM0, &config_match);
@@ -492,7 +515,9 @@ void TIMER0_IRQHandler(void)
 {
 	uint8_t msg1[] = "-------------------------\n\rPPM = ";
 	uint8_t msg2[] = "\n\rVEL = ";
-	uint8_t msg3[] = "[Km/h]\n\r";
+	uint8_t msg3[] = "[Km/h]";
+	uint8_t msg4[] = "\n\rTEMP = ";
+	uint8_t msg5[] = "°C ";
 
 	uint8_t aux_ppm_u = ppm % 10;
 	char unidades_ppm = aux_ppm_u + 48;
@@ -501,6 +526,10 @@ void TIMER0_IRQHandler(void)
 	uint8_t aux_vel_u = velocidad % 10;
 	char unidades_vel = aux_vel_u + 48;
 	char decenas_vel = ((velocidad - aux_vel_u) / 10) + 48;
+
+	uint8_t aux_tmp_u = temperatura % 10;
+	char unidades_tmp = aux_tmp_u + 48;
+	char decenas_tmp = ((temperatura - aux_tmp_u) / 10) + 48;
 
 	UART_Send(LPC_UART2, msg1, sizeof(msg1), BLOCKING);
 
@@ -515,6 +544,14 @@ void TIMER0_IRQHandler(void)
 
 	UART_SendByte(LPC_UART2, unidades_vel);
 	UART_Send(LPC_UART2, msg3, sizeof(msg3), BLOCKING);
+
+	UART_Send(LPC_UART2, msg4, sizeof(msg4), BLOCKING);
+
+	if (decenas_tmp != '0')
+			UART_SendByte(LPC_UART2, decenas_tmp);
+
+	UART_SendByte(LPC_UART2, unidades_tmp);
+	UART_Send(LPC_UART2, msg5, sizeof(msg5), BLOCKING);
 
 	TIM_ClearIntCapturePending(LPC_TIM0, TIM_MR0_INT);
 }
@@ -576,5 +613,19 @@ void stop(void)
 
 void cfg_adc(void)
 {
+	ADC_Init(LPC_ADC, 200000);
+	ADC_StartCmd(LPC_ADC, ADC_START_ON_MAT01);
+	ADC_ChannelCmd(LPC_ADC, 0, ENABLE);
+	ADC_EdgeStartConfig(LPC_ADC, ADC_START_ON_RISING);
+	ADC_IntConfig(LPC_ADC, ADC_ADGINTEN, SET);
 
+	NVIC_EnableIQR(ADC_IRQn);
+}
+
+void ADC_IRQHandler(void){
+	uint32_t medicion;
+	if(ADC_ChannelGetStatus(LPC_ADC, 0, 1)){
+		medicion = ADC_ChannelGetData(LPC_ADC, 0);
+		temperatura = (medicion*0.08); // (3.3)/(4096*0.01)
+	}
 }
