@@ -167,13 +167,8 @@ void cfg_gpio(void)
 	 *							        	*
 	 ****************************************/
 	cfg.Portnum = 1;
-	cfg.Pinnum = 19;
-	cfg.Pinmode = PINSEL_PINMODE_PULLUP;
-	cfg.Funcnum = 3; // CAP1.1
-
-	PINSEL_ConfigPin(&cfg);
-
 	cfg.Pinnum = 18;
+	cfg.Pinmode = PINSEL_PINMODE_PULLUP;
 	cfg.Funcnum = 2;
 
 	PINSEL_ConfigPin(&cfg); // PWM1.1
