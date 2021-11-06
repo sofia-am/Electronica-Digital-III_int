@@ -169,10 +169,10 @@ void cfg_gpio(void)
 	 *        CONFIGURACIÓN PUERTO 1        *
 	 *							        	*
 	 ****************************************/
-	cfg.Portnum = 1;
-	cfg.Pinnum = 19;
+	cfg.Portnum = 0;
+	cfg.Pinnum = 24;
 	cfg.Pinmode = PINSEL_PINMODE_PULLUP;
-	cfg.Funcnum = 3; // CAP1.1
+	cfg.Funcnum = 3; // CAP3.1
 
 	PINSEL_ConfigPin(&cfg);
 
@@ -252,6 +252,7 @@ void EINT3_IRQHandler(void)
 				{
 					TIM_Cmd(LPC_TIM1, ENABLE);
 					TIM_Cmd(LPC_TIM0, ENABLE); // Habilita la transmision serie Y habilita la conversion AD
+					TIM_Cmd(LPC_TIM3, ENABLE);
 
 					UART_TxCmd(LPC_UART2, ENABLE); // Habilita transmisión por UART
 
@@ -387,8 +388,8 @@ void cfg_timers(void)
 	config_capture.FallingEdge = ENABLE;
 	config_capture.IntOnCaption = ENABLE;
 
-	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &config);
-	TIM_ConfigCapture(LPC_TIM1, &config_capture);
+	TIM_Init(LPC_TIM3, TIM_TIMER_MODE, &config);
+	TIM_ConfigCapture(LPC_TIM3, &config_capture);
 
 	/****************************************
 	 *								        *
@@ -407,26 +408,27 @@ void cfg_timers(void)
 
 	/****************************************
 	 *								        *
-	 *       CONFIGURACIÓN DE MATCH 0.1     *
+	 *       CONFIGURACIÓN DE MATCH 1.0     *
 	 *							        	*
 	 ****************************************/
-	config_match.MatchChannel = 1;
+	config_match.MatchChannel = 0;
 	config_match.IntOnMatch = DISABLE;
 	config_match.StopOnMatch = DISABLE;
 	config_match.ResetOnMatch = ENABLE;
 	config_match.ExtMatchOutputType = TIM_EXTMATCH_TOGGLE;
 	config_match.MatchValue = 150; // Hacemos match cada 15[s], nuestra conversion se inicia cada 30[s]
 
-	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &config);
-	TIM_ConfigMatch(LPC_TIM0, &config_match);
+	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &config);
+	TIM_ConfigMatch(LPC_TIM1, &config_match);
 
 	// Habilitación de interrupciones por timers
 	NVIC_EnableIRQ(TIMER0_IRQn);
 	NVIC_EnableIRQ(TIMER1_IRQn);
+	NVIC_EnableIRQ(TIMER3_IRQn);
 
 	//Seteamos mayor prioridad al match que al capture
 	NVIC_SetPriority(TIMER0_IRQn, 5);
-	NVIC_SetPriority(TIMER1_IRQn, 10);
+	NVIC_SetPriority(TIMER3_IRQn, 10);
 }
 
 /**
@@ -460,14 +462,14 @@ void cfg_uart2(void)
 /**
  * @brief Handler para las interrupciones por capture en CAP1.1.
  */
-void TIMER1_IRQHandler(void)
+void TIMER3_IRQHandler(void)
 {
 	uint8_t acum = 0;
 
 	t_clicksb++;
 
 	t_anterior = t_actual;
-	t_actual = TIM_GetCaptureValue(LPC_TIM1, 1);
+	t_actual = TIM_GetCaptureValue(LPC_TIM3, 1);
 	t_final = t_actual - t_anterior;
 
 	if(t_final > 1)
@@ -497,7 +499,7 @@ void TIMER1_IRQHandler(void)
 		ppm = 600 / t_resultado;
 	}
 
-	TIM_ClearIntCapturePending(LPC_TIM1, TIM_CR1_INT);
+	TIM_ClearIntCapturePending(LPC_TIM3, TIM_CR1_INT);
 }
 
 /**
@@ -596,10 +598,12 @@ void stop(void)
 
 	PWM_Cmd(LPC_PWM1, DISABLE);
 
-	TIM_Cmd(LPC_TIM1, DISABLE);
+	TIM_Cmd(LPC_TIM3, DISABLE);
 	TIM_Cmd(LPC_TIM0, DISABLE);
 
 	UART_TxCmd(LPC_UART2, DISABLE);
+
+	ADC_ChannelCmd(LPC_ADC, 0, DISABLE);
 }
 
 void cfg_adc(void)
@@ -615,7 +619,7 @@ void cfg_adc(void)
 	PINSEL_ConfigPin(&cfg);
 
 	ADC_Init(LPC_ADC, 200000);
-	ADC_StartCmd(LPC_ADC, ADC_START_ON_MAT01);
+	ADC_StartCmd(LPC_ADC, ADC_START_ON_MAT10);
 	ADC_ChannelCmd(LPC_ADC, 0, ENABLE);
 	ADC_EdgeStartConfig(LPC_ADC, ADC_START_ON_RISING);
 	ADC_IntConfig(LPC_ADC, ADC_ADGINTEN, SET);
