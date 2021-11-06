@@ -132,14 +132,6 @@ void cfg_gpio(void)
 	GPIO_SetDir(PORT(0), 0x7f, OUTPUT);
 	GPIO_ClearValue(PORT(0), 0x7f);
 
-	cfg.Pinnum = 23;
-	cfg.Funcnum = 1;	//Funcion AD0.0
-	cfg.OpenDrain = PINSEL_PINMODE_NORMAL;
-	cfg.Pinmode = PINSEL_PINMODE_TRISTATE;
-
-	PINSEL_ConfigPin(&cfg);
-	GPIO_SetDir(0, (1<<23), INPUT); //puerto 0, pin 23 como entrada
-
 	/****************************************
 	 *								        *
 	 *        CONFIGURACIÓN PUERTO 2        *
@@ -517,7 +509,7 @@ void TIMER0_IRQHandler(void)
 	uint8_t msg2[] = "\n\rVEL = ";
 	uint8_t msg3[] = "[Km/h]";
 	uint8_t msg4[] = "\n\rTEMP = ";
-	uint8_t msg5[] = "°C ";
+	uint8_t msg5[] = "°C\n\r";
 
 	uint8_t aux_ppm_u = ppm % 10;
 	char unidades_ppm = aux_ppm_u + 48;
@@ -566,7 +558,6 @@ void cfg_pwm(void)
 	PWM_Init(LPC_PWM1, PWM_MODE_TIMER, &config);
 
 	LPC_PWM1->PCR = 0x0; // PWM single-edge
-	//LPC_PWM1->PR = PWMPRESCALE; // Resolución de 1[us]
 	LPC_PWM1->MR0 = 1000; // Período de 1[ms]
 	LPC_PWM1->MR1 = 50; // Duración del pulso inicial
 	LPC_PWM1->MCR = (1<<1); // Reseteo del TC del PWM en match con PWM1MR0
@@ -613,19 +604,31 @@ void stop(void)
 
 void cfg_adc(void)
 {
+	PINSEL_CFG_Type cfg;
+
+	cfg.Portnum = 0;
+	cfg.Pinnum = 23;
+	cfg.Funcnum = 1;	//Funcion AD0.0
+	cfg.OpenDrain = PINSEL_PINMODE_NORMAL;
+	cfg.Pinmode = PINSEL_PINMODE_TRISTATE;
+
+	PINSEL_ConfigPin(&cfg);
+
 	ADC_Init(LPC_ADC, 200000);
 	ADC_StartCmd(LPC_ADC, ADC_START_ON_MAT01);
 	ADC_ChannelCmd(LPC_ADC, 0, ENABLE);
 	ADC_EdgeStartConfig(LPC_ADC, ADC_START_ON_RISING);
 	ADC_IntConfig(LPC_ADC, ADC_ADGINTEN, SET);
 
-	NVIC_EnableIQR(ADC_IRQn);
+	NVIC_EnableIRQ(ADC_IRQn);
 }
 
-void ADC_IRQHandler(void){
-	uint32_t medicion;
-	if(ADC_ChannelGetStatus(LPC_ADC, 0, 1)){
-		medicion = ADC_ChannelGetData(LPC_ADC, 0);
+void ADC_IRQHandler(void)
+{
+	if(ADC_ChannelGetStatus(LPC_ADC, 0, 1))
+	{
+		uint32_t medicion = ADC_ChannelGetData(LPC_ADC, 0);
+
 		temperatura = (medicion*0.08); // (3.3)/(4096*0.01)
 	}
 }
