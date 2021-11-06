@@ -38,6 +38,7 @@ void cfg_gpio(void);
 void cfg_timers(void);
 void cfg_pwm(void);
 void cfg_uart2(void);
+void cfg_adc(void);
 void delay(void);
 void stop(void);
 void set_vel(uint8_t velocidad);
@@ -85,6 +86,7 @@ int main(void)
 	cfg_gpio();
 	cfg_timers();
 	cfg_uart2();
+	cfg_adc();
 
 	for (uint8_t i = 0; i < 10; i++)
 		buff[i] = 0;
@@ -243,6 +245,7 @@ void EINT3_IRQHandler(void)
 				case 0x5e: // 'D' = Comenzar a trackear rendimiento
 				{
 					TIM_Cmd(LPC_TIM3, ENABLE);
+					TIM_Cmd(LPC_TIM1, ENABLE);
 					TIM_Cmd(LPC_TIM0, ENABLE);
 
 					UART_TxCmd(LPC_UART2, ENABLE); // Habilita transmisión
@@ -378,7 +381,7 @@ void cfg_timers(void)
 
 	/****************************************
 	 *								        *
-	 *      CONFIGURACIÓN DE CAPTURE        *
+	 *      CONFIGURACIÓN DE TIMER 3        *
 	 *							        	*
 	 ****************************************/
 	config.PrescaleOption = TIM_PRESCALE_USVAL;
@@ -394,7 +397,7 @@ void cfg_timers(void)
 
 	/****************************************
 	 *								        *
-	 *       CONFIGURACIÓN DE MATCH         *
+	 *       CONFIGURACIÓN DE TIMER 0       *
 	 *							        	*
 	 ****************************************/
 	config_match.MatchChannel = 0;
@@ -406,6 +409,21 @@ void cfg_timers(void)
 
 	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &config);
 	TIM_ConfigMatch(LPC_TIM0, &config_match);
+
+	/****************************************
+	 *								        *
+	 *       CONFIGURACIÓN DE TIMER 1       *
+	 *							        	*
+	 ****************************************/
+	config_match.MatchChannel = 0;
+	config_match.IntOnMatch = DISABLE;
+	config_match.StopOnMatch = DISABLE;
+	config_match.ResetOnMatch = ENABLE;
+	config_match.ExtMatchOutputType = TIM_EXTMATCH_TOGGLE;
+	config_match.MatchValue = 150; // Hacemos match cada 10[s]
+
+	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &config);
+	TIM_ConfigMatch(LPC_TIM1, &config_match);
 
 	// Habilitación de interrupciones por timers
 	NVIC_EnableIRQ(TIMER0_IRQn);
@@ -571,6 +589,38 @@ void stop(void)
 
 	TIM_Cmd(LPC_TIM3, DISABLE);
 	TIM_Cmd(LPC_TIM0, DISABLE);
+	TIM_Cmd(LPC_TIM3, DISABLE);
 
 	UART_TxCmd(LPC_UART2, DISABLE);
+}
+
+void cfg_adc(void)
+{
+	PINSEL_CFG_Type cfg;
+
+	cfg.Portnum = 0;
+	cfg.Pinnum = 23;
+	cfg.Funcnum = 1;	//Funcion AD0.0
+	cfg.OpenDrain = PINSEL_PINMODE_NORMAL;
+	cfg.Pinmode = PINSEL_PINMODE_TRISTATE;
+
+	PINSEL_ConfigPin(&cfg);
+
+	ADC_Init(LPC_ADC, 200000);
+	ADC_StartCmd(LPC_ADC, ADC_START_ON_MAT10);
+	ADC_ChannelCmd(LPC_ADC, 0, ENABLE);
+	ADC_EdgeStartConfig(LPC_ADC, ADC_START_ON_RISING);
+	ADC_IntConfig(LPC_ADC, ADC_ADGINTEN, SET);
+
+	NVIC_EnableIRQ(ADC_IRQn);
+}
+
+void ADC_IRQHandler(void)
+{
+	if(ADC_ChannelGetStatus(LPC_ADC, 0, 1))
+	{
+		uint32_t medicion = ADC_ChannelGetData(LPC_ADC, 0);
+
+		temperatura = (medicion*0.08); // (3.3)/(4096*0.01)
+	}
 }
