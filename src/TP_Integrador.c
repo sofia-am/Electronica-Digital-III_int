@@ -78,8 +78,8 @@ uint8_t keys_dec[SIZE] = // Valores en decimal del teclado matricial
 	7, 8, 9, 0, // 7 8 9 X
 	0, 0, 0, 0  // X 0 X X
 };
+float temperatura = 0.0;
 uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebote
-uint16_t temperatura;
 
 /**
  * @brief Función principal. Acá se configuran
