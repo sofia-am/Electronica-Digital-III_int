@@ -221,11 +221,16 @@ void EINT3_IRQHandler(void)
 
 				case 0x7c: // 'B' = Setear velocidad ingresada
 				{
-					velocidad = vel_digits[0]*10 + vel_digits[1];
+					uint8_t aux = vel_digits[0]*10 + vel_digits[1];
 
-					set_vel(velocidad);
+					if (aux < MAX_SPEED)
+					{
+						velocidad = aux;
 
-					vel_index = 0;
+						set_vel(velocidad);
+
+						vel_index = 0;
+					}
 
 					break;
 				}
@@ -568,11 +573,8 @@ void cfg_pwm(void)
  */
 void set_vel(uint8_t velocidad)
 {
-	if(velocidad <= MAX_SPEED)
-	{
-		LPC_PWM1->MR1 = velocidad * 50; //cycle_rate; // Actualiza MR1 con este nuevo valor
-		LPC_PWM1->LER = (1<<1); // Cargamos el nuevo valor de MR1 al comienzo del siguiente ciclo
-	}
+	LPC_PWM1->MR1 = velocidad * 50; //cycle_rate; // Actualiza MR1 con este nuevo valor
+	LPC_PWM1->LER = (1<<1); // Cargamos el nuevo valor de MR1 al comienzo del siguiente ciclo
 }
 
 /**
