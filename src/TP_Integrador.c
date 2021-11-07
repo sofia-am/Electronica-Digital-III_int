@@ -50,6 +50,8 @@ void set_vel(uint8_t velocidad);
 uint8_t get_pressed_key(void);
 uint8_t get_digit(uint8_t, uint8_t);
 
+char *int2str(unsigned long);
+
 // Variables globales
 uint8_t on = 0; // Flag para encendido
 uint8_t vel_digits[2] = { 0, 0 }; // Arreglo para los dígitos de la velocidad
@@ -229,7 +231,7 @@ void EINT3_IRQHandler(void)
 				{
 					uint8_t aux = vel_digits[0]*10 + vel_digits[1];
 
-					if (aux < MAX_SPEED)
+					if (aux <= MAX_SPEED)
 					{
 						velocidad = aux;
 
@@ -512,20 +514,39 @@ void TIMER3_IRQHandler(void)
 
 /**
  * @brief Handler para las interrupciones por match en MAT0.0.
+ *
+ * @details	Se envía por UART la información de las pulsaciones
+ * 			por minuto, la velocidad y los kilómetros por hora.
+ *
  */
 void TIMER0_IRQHandler(void)
 {
 	uint8_t msg1[] = "-------------------------\n\rPPM = ";
 	uint8_t msg2[] = "\n\rVEL = ";
-	uint8_t msg3[] = "[Km/h]\n\r";
+	uint8_t msg3[] = "[Km/h]";
+	uint8_t msg4[] = "\n\rTEMP = ";
+	uint8_t msg5[] = "[ºC]\n\r";
 
+	// PPM
 	char unidades_ppm = get_digit(ppm, UNIDAD);
 	char decenas_ppm = 0;
 	char centena_ppm = 0;
 
+	// VEL
 	char unidades_vel = get_digit(velocidad, UNIDAD);
 	char decenas_vel = get_digit(velocidad, DECENA);
 
+	// TEMP
+	char unidades_temp = get_digit(temperatura, UNIDAD);
+	char decenas_temp = get_digit(temperatura, DECENA);
+
+	uint16_t temp_aux = temperatura * 100;
+
+	temp_aux -= ((decenas_temp * 100) + (unidades_temp * 10));
+
+	char decimal_temp = get_digit(temp_aux, UNIDAD);
+
+	// Transmisión de datos
 	UART_Send(LPC_UART2, msg1, sizeof(msg1), BLOCKING);
 
 	if (ppm >= 100)
@@ -545,17 +566,33 @@ void TIMER0_IRQHandler(void)
 		UART_SendByte(LPC_UART2, decenas_ppm);
 
 	UART_SendByte(LPC_UART2, unidades_ppm);
+
 	UART_Send(LPC_UART2, msg2, sizeof(msg2), BLOCKING);
 
 	if (decenas_vel != '0')
 			UART_SendByte(LPC_UART2, decenas_vel);
 
 	UART_SendByte(LPC_UART2, unidades_vel);
+
 	UART_Send(LPC_UART2, msg3, sizeof(msg3), BLOCKING);
+	UART_Send(LPC_UART2, msg4, sizeof(msg4), BLOCKING);
+
+	if (decenas_temp != '0')
+		UART_SendByte(LPC_UART2, decenas_temp);
+
+	UART_SendByte(LPC_UART2, unidades_temp);
+	UART_SendByte(LPC_UART2, '.');
+	UART_SendByte(LPC_UART2, decimal_temp);
+
+	UART_Send(LPC_UART2, msg5, sizeof(msg5), BLOCKING);
 
 	TIM_ClearIntCapturePending(LPC_TIM0, TIM_MR0_INT);
 }
 
+/**
+ * @brief Esta función devuelve el dígito especificado
+ * 		  por parámetro del número recibido.
+ */
 uint8_t get_digit(uint8_t num, uint8_t digit)
 {
 	uint8_t aux_u = num % 10;
@@ -574,6 +611,11 @@ uint8_t get_digit(uint8_t num, uint8_t digit)
 	}
 }
 
+/**
+ * @brief Esta función configura el módulo de PWM con
+ * 		  un período de 1[ms] e inicializándolo con
+ * 		  una velocad de 1[Km/h].
+ */
 void cfg_pwm(void)
 {
 	PWM_TIMERCFG_Type config;
@@ -584,14 +626,14 @@ void cfg_pwm(void)
 	PWM_Init(LPC_PWM1, PWM_MODE_TIMER, &config);
 
 	LPC_PWM1->PCR = 0x0; // PWM single-edge
-	LPC_PWM1->MR0 = 1000; // Período de 1[ms]
-	LPC_PWM1->MR1 = 50; // Duración del pulso inicial
+	LPC_PWM1->MR0 = 1000;
+	LPC_PWM1->MR1 = 50;
 	LPC_PWM1->MCR = (1<<1); // Reseteo del TC del PWM en match con PWM1MR0
 	LPC_PWM1->LER = (1<<1) | (1<<0); // Aplicar valores a MR0 y MR1
 	LPC_PWM1->PCR = (1<<9); // Habilitar output de PWM
 	LPC_PWM1->TCR = (1<<1); // Resteo de TC y PR
 
-	velocidad = 1; // Comenzamos a 1[Km/h]
+	velocidad = 1;
 }
 
 /**
@@ -626,6 +668,11 @@ void stop(void)
 	UART_TxCmd(LPC_UART2, DISABLE);
 }
 
+/**
+ * @brief Esta función configura el canal 0 del ADC
+ * 		  para que funcione con el start asociado a
+ * 		  al canal 0 de match del timer 1 (MAT1.0).
+ */
 void cfg_adc(void)
 {
 	// Configuramos P0.23 como AD0.0
@@ -652,6 +699,11 @@ void cfg_adc(void)
 	NVIC_EnableIRQ(ADC_IRQn);
 }
 
+/**
+ * @brief Este handler toma la lectura del ADC y la convierte
+ * 		  a su equivalente en temperatura en base a las
+ * 		  especificaciones del sensor de temperatura LM35.
+ */
 void ADC_IRQHandler(void)
 {
 	uint16_t adc_read = (ADC_GlobalGetData(LPC_ADC) >> 4) & 0xfff;
