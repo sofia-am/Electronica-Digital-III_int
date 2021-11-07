@@ -15,6 +15,7 @@
 #include "lpc17xx_timer.h"
 #include "lpc17xx_pwm.h"
 #include "lpc17xx_uart.h"
+#include "lpc17xx_adc.h"
 
 // Definiciones útiles
 #define INPUT 0
@@ -41,6 +42,7 @@ void cfg_gpio(void);
 void cfg_timers(void);
 void cfg_pwm(void);
 void cfg_uart2(void);
+void cfg_adc(void);
 void delay(void);
 void stop(void);
 void set_vel(uint8_t velocidad);
@@ -60,8 +62,6 @@ uint8_t t_index = 0; // Índice para recorrer el arreglo de mediciones (para cap
 uint8_t t_resultado = 0; // Promedio de mediciones (para capture)
 uint8_t ppm = 0;
 uint8_t t_flag = 0;  // Flag para indicar división en promediador móvil (para capture)
-uint8_t	t_clicks = 0;
-uint8_t	t_clicksb = 0;
 uint8_t buff[SIZEB]; // Buffer con mediciones (para capture)
 uint8_t pwm_high = 0;
 uint8_t keys_hex[SIZE] = // Valores en hexadecimal del teclado matricial
@@ -79,6 +79,7 @@ uint8_t keys_dec[SIZE] = // Valores en decimal del teclado matricial
 	0, 0, 0, 0  // X 0 X X
 };
 uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebote
+uint16_t temperatura;
 
 /**
  * @brief Función principal. Acá se configuran
@@ -89,6 +90,7 @@ int main(void)
 	cfg_gpio();
 	cfg_timers();
 	cfg_uart2();
+	cfg_adc();
 
 	for (uint8_t i = 0; i < 10; i++)
 		buff[i] = 0;
@@ -388,7 +390,7 @@ void cfg_timers(void)
 
 	/****************************************
 	 *								        *
-	 *      CONFIGURACIÓN DE TIMER 3        *
+	 *      CONFIGURACIÓN DE TIMER 3        *	>>	PARA PPM POR CAPTURE
 	 *							        	*
 	 ****************************************/
 	config.PrescaleOption = TIM_PRESCALE_USVAL;
@@ -404,7 +406,7 @@ void cfg_timers(void)
 
 	/****************************************
 	 *								        *
-	 *       CONFIGURACIÓN DE TIMER 0       *
+	 *       CONFIGURACIÓN DE TIMER 0       *	>>	PARA COMUNICACIÓN UART
 	 *							        	*
 	 ****************************************/
 	config_match.MatchChannel = 0;
@@ -419,7 +421,7 @@ void cfg_timers(void)
 
 	/****************************************
 	 *								        *
-	 *       CONFIGURACIÓN DE TIMER 1       *
+	 *       CONFIGURACIÓN DE TIMER 1       *	>>	PARA MUESTREO ADC
 	 *							        	*
 	 ****************************************/
 	config_match.MatchChannel = 0;
@@ -427,7 +429,7 @@ void cfg_timers(void)
 	config_match.StopOnMatch = DISABLE;
 	config_match.ResetOnMatch = ENABLE;
 	config_match.ExtMatchOutputType = TIM_EXTMATCH_TOGGLE;
-	config_match.MatchValue = 150; // Hacemos match cada 15[s]
+	config_match.MatchValue = 149; // Hacemos match cada 15[s]
 
 	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &config);
 	TIM_ConfigMatch(LPC_TIM1, &config_match);
@@ -476,16 +478,12 @@ void TIMER3_IRQHandler(void)
 {
 	uint8_t acum = 0;
 
-	t_clicksb++;
-
 	t_anterior = t_actual;
 	t_actual = TIM_GetCaptureValue(LPC_TIM3, 1);
 	t_final = t_actual - t_anterior;
 
 	if(t_final > 1)
 	{
-		t_clicks++;
-
 		buff[t_index] = t_final;
 
 		if(t_index == (SIZEB-1))
@@ -626,4 +624,37 @@ void stop(void)
 	TIM_Cmd(LPC_TIM1, DISABLE);
 
 	UART_TxCmd(LPC_UART2, DISABLE);
+}
+
+void cfg_adc(void)
+{
+	// Configuramos P0.23 como AD0.0
+	PINSEL_CFG_Type cfg;
+
+	cfg.Portnum = 0;
+	cfg.Pinnum = 23;
+	cfg.Pinmode = PINSEL_PINMODE_TRISTATE;
+	cfg.Funcnum = 1;
+	cfg.OpenDrain = PINSEL_PINMODE_NORMAL;
+
+	PINSEL_ConfigPin(&cfg);
+
+	// Configuramos ADC
+	LPC_SC-> PCLKSEL0 |= (3 << 24);  // CCLK/8 = 100/8[Mhz] = 12.5[MHz]
+
+	ADC_Init(LPC_ADC, 200000);
+	ADC_ChannelCmd(LPC_ADC, 0, ENABLE);
+	ADC_StartCmd(LPC_ADC, ADC_START_ON_MAT10);
+	ADC_EdgeStartConfig(LPC_ADC, ADC_START_ON_RISING);
+	ADC_IntConfig(LPC_ADC, ADC_ADGINTEN, SET);
+
+	NVIC_ClearPendingIRQ(ADC_IRQn);
+	NVIC_EnableIRQ(ADC_IRQn);
+}
+
+void ADC_IRQHandler(void)
+{
+	uint16_t adc_read = (ADC_GlobalGetData(LPC_ADC) >> 4) & 0xfff;
+
+	temperatura = (adc_read * 0.08);
 }
