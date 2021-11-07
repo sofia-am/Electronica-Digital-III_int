@@ -32,6 +32,9 @@
 #define TIMER 600000
 #define MAX_SPEED 20 // [Km/h]
 #define PWMPRESCALE (25-1)
+#define UNIDAD 0
+#define DECENA 1
+#define CENTENA 2
 
 // Prototipado de funciones
 void cfg_gpio(void);
@@ -43,6 +46,7 @@ void stop(void);
 void set_vel(uint8_t velocidad);
 
 uint8_t get_pressed_key(void);
+uint8_t get_digit(uint8_t, uint8_t);
 
 // Variables globales
 uint8_t on = 0; // Flag para encendido
@@ -517,17 +521,29 @@ void TIMER0_IRQHandler(void)
 	uint8_t msg2[] = "\n\rVEL = ";
 	uint8_t msg3[] = "[Km/h]\n\r";
 
-	uint8_t aux_ppm_u = ppm % 10;
-	char unidades_ppm = aux_ppm_u + 48;
-	char decenas_ppm = ((ppm - aux_ppm_u) / 10) + 48;
+	char unidades_ppm = get_digit(ppm, UNIDAD);
+	char decenas_ppm = 0;
+	char centena_ppm = 0;
 
-	uint8_t aux_vel_u = velocidad % 10;
-	char unidades_vel = aux_vel_u + 48;
-	char decenas_vel = ((velocidad - aux_vel_u) / 10) + 48;
+	char unidades_vel = get_digit(velocidad, UNIDAD);
+	char decenas_vel = get_digit(velocidad, DECENA);
 
 	UART_Send(LPC_UART2, msg1, sizeof(msg1), BLOCKING);
 
-	if (decenas_ppm != '0')
+	if (ppm >= 100)
+	{
+		centena_ppm = get_digit(ppm, CENTENA);
+		decenas_ppm = get_digit((ppm % 100), DECENA);
+	}
+	else
+		decenas_ppm = get_digit(ppm, DECENA);
+
+	if (centena_ppm != '0')
+	{
+		UART_SendByte(LPC_UART2, centena_ppm);
+		UART_SendByte(LPC_UART2, decenas_ppm);
+	}
+	else if (decenas_ppm != '0')
 		UART_SendByte(LPC_UART2, decenas_ppm);
 
 	UART_SendByte(LPC_UART2, unidades_ppm);
@@ -540,6 +556,24 @@ void TIMER0_IRQHandler(void)
 	UART_Send(LPC_UART2, msg3, sizeof(msg3), BLOCKING);
 
 	TIM_ClearIntCapturePending(LPC_TIM0, TIM_MR0_INT);
+}
+
+uint8_t get_digit(uint8_t num, uint8_t digit)
+{
+	uint8_t aux_u = num % 10;
+	uint8_t aux_d = ((num - aux_u) / 10);
+
+	switch (digit)
+	{
+		case UNIDAD:
+			return (aux_u + 48);
+
+		case DECENA:
+			return (aux_d + 48);
+
+		default:
+			return (((num - (aux_d + aux_u)) / 100) + 48);
+	}
 }
 
 void cfg_pwm(void)
