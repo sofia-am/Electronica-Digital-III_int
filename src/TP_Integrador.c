@@ -50,8 +50,6 @@ void set_vel(uint8_t velocidad);
 uint8_t get_pressed_key(void);
 uint8_t get_digit(uint8_t, uint8_t);
 
-char *int2str(unsigned long);
-
 // Variables globales
 uint8_t on = 0; // Flag para encendido
 uint8_t vel_digits[2] = { 0, 0 }; // Arreglo para los dígitos de la velocidad
