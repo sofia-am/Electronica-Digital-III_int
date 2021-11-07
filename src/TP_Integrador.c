@@ -16,6 +16,7 @@
 #include "lpc17xx_pwm.h"
 #include "lpc17xx_uart.h"
 #include "lpc17xx_adc.h"
+#include "lpc17xx_gpdma.h"
 
 // Definiciones útiles
 #define INPUT 0
@@ -43,9 +44,11 @@ void cfg_timers(void);
 void cfg_pwm(void);
 void cfg_uart2(void);
 void cfg_adc(void);
+void cfg_dma(void);
 void delay(void);
 void stop(void);
 void set_vel(uint8_t velocidad);
+void Buffer_Verify(void);
 
 uint8_t get_pressed_key(void);
 uint8_t get_digit(uint8_t, uint8_t);
@@ -78,8 +81,23 @@ uint8_t keys_dec[SIZE] = // Valores en decimal del teclado matricial
 	7, 8, 9, 0, // 7 8 9 X
 	0, 0, 0, 0  // X 0 X X
 };
-float temperatura = 0.0;
+
 uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebote
+
+uint32_t DMASrc_Buffer[SIZE] =
+{
+	0x06, 0x5b, 0x4f, 0x77,
+	0x66, 0x6d, 0x7d, 0x7c,
+	0x07, 0x7f, 0x67, 0x39,
+	0x79, 0x3f, 0x71, 0x5E
+};
+
+uint32_t DMADest_Buffer[SIZE];
+
+float temperatura = 0.0;
+
+volatile uint32_t Channel0_TC;
+volatile uint32_t Channel0_Err;
 
 /**
  * @brief Función principal. Acá se configuran
@@ -91,6 +109,7 @@ int main(void)
 	cfg_timers();
 	cfg_uart2();
 	cfg_adc();
+	cfg_dma();
 
 	for (uint8_t i = 0; i < 10; i++)
 		buff[i] = 0;
@@ -247,6 +266,13 @@ void EINT3_IRQHandler(void)
 					vel_index = 0;
 
 					stop();
+
+					// DMA transfer
+					GPDMA_ChannelCmd(0, ENABLE);
+
+					while ((Channel0_TC == 0) && (Channel0_Err == 0));
+
+					Buffer_Verify();
 
 					break;
 				}
@@ -707,4 +733,66 @@ void ADC_IRQHandler(void)
 	uint16_t adc_read = (ADC_GlobalGetData(LPC_ADC) >> 4) & 0xfff;
 
 	temperatura = (adc_read * 0.08);
+}
+
+void cfg_dma(void)
+{
+	GPDMA_Channel_CFG_Type GPDMACfg;
+
+	NVIC_DisableIRQ(DMA_IRQn);
+
+	GPDMA_Init();
+
+	GPDMACfg.ChannelNum = 0;
+	GPDMACfg.SrcMemAddr = (uint32_t)DMASrc_Buffer;
+	GPDMACfg.DstMemAddr = (uint32_t)DMADest_Buffer;
+	GPDMACfg.TransferSize = SIZE;
+	GPDMACfg.TransferWidth = GPDMA_WIDTH_WORD;
+	GPDMACfg.TransferType = GPDMA_TRANSFERTYPE_M2M;
+	GPDMACfg.SrcConn = 0;
+	GPDMACfg.DstConn = 0;
+	GPDMACfg.DMALLI = 0;
+
+	GPDMA_Setup(&GPDMACfg);
+}
+
+void DMA_IRQHandler (void)
+{
+	// check GPDMA interrupt on channel 0
+	if (GPDMA_IntGetStatus(GPDMA_STAT_INT, 0)) //check interrupt status on channel 0
+	{
+		// Check counter terminal status
+		if(GPDMA_IntGetStatus(GPDMA_STAT_INTTC, 0))
+		{
+			// Clear terminate counter Interrupt pending
+			GPDMA_ClearIntPending (GPDMA_STATCLR_INTTC, 0);
+
+			Channel0_TC++;
+		}
+
+		if (GPDMA_IntGetStatus(GPDMA_STAT_INTERR, 0))
+		{
+			// Clear error counter Interrupt pending
+			GPDMA_ClearIntPending (GPDMA_STATCLR_INTERR, 0);
+
+			Channel0_Err++;
+		}
+	}
+	return;
+}
+
+void Buffer_Verify(void)
+{
+	uint8_t i;
+
+	uint32_t *src_addr = (uint32_t *)DMASrc_Buffer;
+	uint32_t *dest_addr = (uint32_t *)DMADest_Buffer;
+
+	for ( i = 0; i < SIZE; i++ )
+		if ( *src_addr++ != *dest_addr++ )
+		{
+			while(1){}
+		}
+
+	return;
 }
