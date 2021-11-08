@@ -44,6 +44,7 @@ void cfg_timers(void);
 void cfg_pwm(void);
 void cfg_uart2(void);
 void cfg_adc(void);
+void cfg_dma(void);
 void delay(void);
 void stop(void);
 void set_vel(uint8_t velocidad);
@@ -85,6 +86,16 @@ uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebot
 
 float temperatura = 0.0;
 
+const uint32_t DMASrc_Buffer[16]=
+{
+		0x01020304,0x05060708,0x090A0B0C,0x0D0E0F10,
+		0x11121314,0x15161718,0x191A1B1C,0x1D1E1F20,
+		0x21222324,0x25262728,0x292A2B2C,0x2D2E2F30,
+		0x31323334,0x35363738,0x393A3B3C,0x3D3E3F40
+};
+
+uint32_t DMADest_Buffer[16];
+
 /**
  * @brief Función principal. Acá se configuran
  * 		  todos los periféricos.
@@ -95,6 +106,7 @@ int main(void)
 	cfg_timers();
 	cfg_uart2();
 	cfg_adc();
+	cfg_dma();
 
 	for (uint8_t i = 0; i < 10; i++)
 		buff[i] = 0;
@@ -247,12 +259,14 @@ void EINT3_IRQHandler(void)
 
 				case 0x39: // 'C' = Resetear y apagar
 				{
-					on = 0;
-					vel_index = 0;
-
 					stop();
 
 					distancia = velocidad * tiempo_s * 0.28;
+
+					on = 0;
+					vel_index = 0;
+
+					GPDMA_ChannelCmd(0, ENABLE);
 
 					break;
 				}
@@ -738,4 +752,52 @@ void ADC_IRQHandler(void)
 	uint16_t adc_read = (ADC_GlobalGetData(LPC_ADC) >> 4) & 0xfff;
 
 	temperatura = (adc_read * 0.08);
+}
+
+void cfg_dma(void)
+{
+	NVIC_DisableIRQ(DMA_IRQn);
+
+	GPDMA_Channel_CFG_Type dma_cfg;
+
+	GPDMA_Init();
+
+	dma_cfg.ChannelNum = 0;
+	dma_cfg.SrcMemAddr = (uint32_t)DMASrc_Buffer;
+	dma_cfg.DstMemAddr = (uint32_t)DMADest_Buffer;
+	dma_cfg.TransferSize = 16;
+	dma_cfg.TransferWidth = GPDMA_WIDTH_WORD;
+	dma_cfg.TransferType = GPDMA_TRANSFERTYPE_M2M;
+	dma_cfg.SrcConn = 0;
+	dma_cfg.DstConn = 0;
+	dma_cfg.DMALLI = 0;
+
+	GPDMA_Setup(&dma_cfg);
+
+	NVIC_EnableIRQ(DMA_IRQn);
+}
+
+void Buffer_Verify(void)
+{
+	uint32_t *src_addr = (uint32_t *)DMASrc_Buffer;
+	uint32_t *dest_addr = (uint32_t *)DMADest_Buffer;
+
+	for (uint8_t i = 0; i < 16; i++)
+		if (*src_addr++ != *dest_addr++)
+			while(1);
+}
+
+void DMA_IRQHandler(void)
+{
+	if(GPDMA_IntGetStatus(GPDMA_STAT_INTTC, 0))
+	{
+		GPDMA_ClearIntPending(GPDMA_STATCLR_INTTC, 0);
+	}
+
+	if (GPDMA_IntGetStatus(GPDMA_STAT_INTERR, 0))
+	{
+		GPDMA_ClearIntPending(GPDMA_STATCLR_INTERR, 0);
+	}
+
+	GPDMA_ChannelCmd(0, DISABLE);
 }
