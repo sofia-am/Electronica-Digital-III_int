@@ -37,7 +37,7 @@
 #define UNIDAD 0
 #define DECENA 1
 #define CENTENA 2
-#define DMA_TRANSFER_SIZE
+#define DMA_TRANSFER_SIZE 5
 
 // Prototipado de funciones
 void cfg_gpio(void);
@@ -93,9 +93,8 @@ uint32_t DMADst_Buffer[DMA_TRANSFER_SIZE];
  */
 int main(void)
 {
-	for (uint8_t i = 0; i < DMA_TRANSFER_SIZE; i++) {
-
-	}
+	for (uint8_t i = 0; i < DMA_TRANSFER_SIZE; i++)
+		DMASrc_Buffer[i] = 0;
 
 	cfg_gpio();
 	cfg_timers();
@@ -766,7 +765,7 @@ void cfg_dma(void)
 	dma_cfg.ChannelNum = 0;
 	dma_cfg.SrcMemAddr = (uint32_t)DMASrc_Buffer;
 	dma_cfg.DstMemAddr = (uint32_t)DMADst_Buffer;
-	dma_cfg.TransferSize = 1;
+	dma_cfg.TransferSize = DMA_TRANSFER_SIZE;
 	dma_cfg.TransferWidth = GPDMA_WIDTH_WORD;
 	dma_cfg.TransferType = GPDMA_TRANSFERTYPE_M2M;
 	dma_cfg.SrcConn = 0;
