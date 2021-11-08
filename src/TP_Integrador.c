@@ -65,7 +65,6 @@ uint8_t t_resultado = 0; // Promedio de mediciones (para capture)
 uint8_t ppm = 0;
 uint8_t t_flag = 0;  // Flag para indicar división en promediador móvil (para capture)
 uint8_t buff[SIZEB]; // Buffer con mediciones (para capture)
-uint8_t pwm_high = 0;
 uint8_t keys_hex[SIZE] = // Valores en hexadecimal del teclado matricial
 {
 	0x06, 0x5b, 0x4f, 0x77, // 1 2 3 A
@@ -790,14 +789,10 @@ void Buffer_Verify(void)
 void DMA_IRQHandler(void)
 {
 	if(GPDMA_IntGetStatus(GPDMA_STAT_INTTC, 0))
-	{
 		GPDMA_ClearIntPending(GPDMA_STATCLR_INTTC, 0);
-	}
 
 	if (GPDMA_IntGetStatus(GPDMA_STAT_INTERR, 0))
-	{
 		GPDMA_ClearIntPending(GPDMA_STATCLR_INTERR, 0);
-	}
 
 	GPDMA_ChannelCmd(0, DISABLE);
 }
