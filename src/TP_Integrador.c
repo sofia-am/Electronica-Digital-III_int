@@ -81,15 +81,16 @@ uint8_t keys_dec[SIZE] = // Valores en decimal del teclado matricial
 	7, 8, 9, 0, // 7 8 9 X
 	0, 0, 0, 0  // X 0 X X
 };
-
+uint32_t tiempo_s = 0;
+uint32_t distancia = 0;
 uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebote
 
 uint32_t DMASrc_Buffer[SIZE] =
 {
-	0x06, 0x5b, 0x4f, 0x77,
-	0x66, 0x6d, 0x7d, 0x7c,
-	0x07, 0x7f, 0x67, 0x39,
-	0x79, 0x3f, 0x71, 0x5E
+	0x01020304,0x05060708,0x090A0B0C,0x0D0E0F10,
+	0x11121314,0x15161718,0x191A1B1C,0x1D1E1F20,
+	0x21222324,0x25262728,0x292A2B2C,0x2D2E2F30,
+	0x31323334,0x35363738,0x393A3B3C,0x3D3E3F40
 };
 
 uint32_t DMADest_Buffer[SIZE];
@@ -105,11 +106,16 @@ volatile uint32_t Channel0_Err;
  */
 int main(void)
 {
+	for (uint8_t i = 0; i < 100; i++)
+		delay();
+
 	cfg_gpio();
 	cfg_timers();
 	cfg_uart2();
 	cfg_adc();
-	cfg_dma();
+
+	Channel0_TC = 0;
+	Channel0_Err = 0;
 
 	for (uint8_t i = 0; i < 10; i++)
 		buff[i] = 0;
@@ -267,12 +273,7 @@ void EINT3_IRQHandler(void)
 
 					stop();
 
-					// DMA transfer
-					GPDMA_ChannelCmd(0, ENABLE);
-
-					while ((Channel0_TC == 0) && (Channel0_Err == 0));
-
-					Buffer_Verify();
+					distancia = velocidad * tiempo_s * 0.28;
 
 					break;
 				}
@@ -282,6 +283,7 @@ void EINT3_IRQHandler(void)
 					TIM_Cmd(LPC_TIM3, ENABLE);
 					TIM_Cmd(LPC_TIM1, ENABLE);
 					TIM_Cmd(LPC_TIM0, ENABLE);
+					TIM_Cmd(LPC_TIM2, ENABLE);
 
 					UART_TxCmd(LPC_UART2, ENABLE); // Habilita transmisión
 
@@ -460,9 +462,25 @@ void cfg_timers(void)
 	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &config);
 	TIM_ConfigMatch(LPC_TIM1, &config_match);
 
+	/****************************************
+	 *								        *
+	 *       CONFIGURACIÓN DE TIMER 2       *	>>	PARA TRACKEAR TIEMPO
+	 *							        	*
+	 ****************************************/
+	config_match.MatchChannel = 0;
+	config_match.IntOnMatch = ENABLE;
+	config_match.StopOnMatch = DISABLE;
+	config_match.ResetOnMatch = ENABLE;
+	config_match.ExtMatchOutputType = TIM_EXTMATCH_NOTHING;
+	config_match.MatchValue = 9; // Hacemos match cada 1[s]
+
+	TIM_Init(LPC_TIM2, TIM_TIMER_MODE, &config);
+	TIM_ConfigMatch(LPC_TIM2, &config_match);
+
 	// Habilitación de interrupciones por timers
 	NVIC_EnableIRQ(TIMER0_IRQn);
 	NVIC_EnableIRQ(TIMER3_IRQn);
+	NVIC_EnableIRQ(TIMER2_IRQn);
 
 	//Seteamos mayor prioridad al match que al capture
 	NVIC_SetPriority(TIMER0_IRQn, 5);
@@ -495,6 +513,13 @@ void cfg_uart2(void)
 	UART_Init(LPC_UART2, &UARTConfigStruct);
 	UART_FIFOConfigStructInit(&UARTFIFOConfigStruct);
 	UART_FIFOConfig(LPC_UART2, &UARTFIFOConfigStruct);
+}
+
+void TIMER2_IRQHandler(void)
+{
+	tiempo_s++;
+
+	TIM_ClearIntCapturePending(LPC_TIM2, TIM_MR0_INT);
 }
 
 /**
@@ -688,6 +713,7 @@ void stop(void)
 	TIM_Cmd(LPC_TIM3, DISABLE);
 	TIM_Cmd(LPC_TIM0, DISABLE);
 	TIM_Cmd(LPC_TIM1, DISABLE);
+	TIM_Cmd(LPC_TIM2, DISABLE);
 
 	UART_TxCmd(LPC_UART2, DISABLE);
 }
@@ -733,66 +759,4 @@ void ADC_IRQHandler(void)
 	uint16_t adc_read = (ADC_GlobalGetData(LPC_ADC) >> 4) & 0xfff;
 
 	temperatura = (adc_read * 0.08);
-}
-
-void cfg_dma(void)
-{
-	GPDMA_Channel_CFG_Type GPDMACfg;
-
-	NVIC_DisableIRQ(DMA_IRQn);
-
-	GPDMA_Init();
-
-	GPDMACfg.ChannelNum = 0;
-	GPDMACfg.SrcMemAddr = (uint32_t)DMASrc_Buffer;
-	GPDMACfg.DstMemAddr = (uint32_t)DMADest_Buffer;
-	GPDMACfg.TransferSize = SIZE;
-	GPDMACfg.TransferWidth = GPDMA_WIDTH_WORD;
-	GPDMACfg.TransferType = GPDMA_TRANSFERTYPE_M2M;
-	GPDMACfg.SrcConn = 0;
-	GPDMACfg.DstConn = 0;
-	GPDMACfg.DMALLI = 0;
-
-	GPDMA_Setup(&GPDMACfg);
-}
-
-void DMA_IRQHandler (void)
-{
-	// check GPDMA interrupt on channel 0
-	if (GPDMA_IntGetStatus(GPDMA_STAT_INT, 0)) //check interrupt status on channel 0
-	{
-		// Check counter terminal status
-		if(GPDMA_IntGetStatus(GPDMA_STAT_INTTC, 0))
-		{
-			// Clear terminate counter Interrupt pending
-			GPDMA_ClearIntPending (GPDMA_STATCLR_INTTC, 0);
-
-			Channel0_TC++;
-		}
-
-		if (GPDMA_IntGetStatus(GPDMA_STAT_INTERR, 0))
-		{
-			// Clear error counter Interrupt pending
-			GPDMA_ClearIntPending (GPDMA_STATCLR_INTERR, 0);
-
-			Channel0_Err++;
-		}
-	}
-	return;
-}
-
-void Buffer_Verify(void)
-{
-	uint8_t i;
-
-	uint32_t *src_addr = (uint32_t *)DMASrc_Buffer;
-	uint32_t *dest_addr = (uint32_t *)DMADest_Buffer;
-
-	for ( i = 0; i < SIZE; i++ )
-		if ( *src_addr++ != *dest_addr++ )
-		{
-			while(1){}
-		}
-
-	return;
 }
