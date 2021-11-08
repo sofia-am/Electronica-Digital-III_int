@@ -37,6 +37,7 @@
 #define UNIDAD 0
 #define DECENA 1
 #define CENTENA 2
+#define DMA_TRANSFER_SIZE
 
 // Prototipado de funciones
 void cfg_gpio(void);
@@ -56,13 +57,11 @@ uint8_t get_digit(uint8_t, uint8_t);
 uint8_t on = 0; // Flag para encendido
 uint8_t vel_digits[2] = { 0, 0 }; // Arreglo para los dígitos de la velocidad
 uint8_t vel_index = 0; // Índice para el arreglo de velocidad
-uint8_t velocidad = 0;
 uint8_t t_anterior = 0; // Tiempo de medición anterior (para capture)
 uint8_t t_actual = 0; // Tiempo de medición actual (para capture)
 uint8_t t_final = 0; // Tiempo resultante (para capture)
 uint8_t t_index = 0; // Índice para recorrer el arreglo de mediciones (para capture)
 uint8_t t_resultado = 0; // Promedio de mediciones (para capture)
-uint8_t ppm = 0;
 uint8_t t_flag = 0;  // Flag para indicar división en promediador móvil (para capture)
 uint8_t buff[SIZEB]; // Buffer con mediciones (para capture)
 uint8_t keys_hex[SIZE] = // Valores en hexadecimal del teclado matricial
@@ -79,21 +78,14 @@ uint8_t keys_dec[SIZE] = // Valores en decimal del teclado matricial
 	7, 8, 9, 0, // 7 8 9 X
 	0, 0, 0, 0  // X 0 X X
 };
-uint32_t tiempo_s = 0;
-uint32_t distancia = 0;
 uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebote
-
-float temperatura = 0.0;
-
-const uint32_t DMASrc_Buffer[16]=
-{
-		0x01020304,0x05060708,0x090A0B0C,0x0D0E0F10,
-		0x11121314,0x15161718,0x191A1B1C,0x1D1E1F20,
-		0x21222324,0x25262728,0x292A2B2C,0x2D2E2F30,
-		0x31323334,0x35363738,0x393A3B3C,0x3D3E3F40
-};
-
-uint32_t DMADest_Buffer[16];
+uint32_t ppm = 0;
+uint32_t velocidad = 0;
+float temperatura = 0;
+uint32_t distancia = 0;
+uint32_t tiempo_s = 0;
+uint32_t DMASrc_Buffer[DMA_TRANSFER_SIZE];
+uint32_t DMADst_Buffer[DMA_TRANSFER_SIZE];
 
 /**
  * @brief Función principal. Acá se configuran
@@ -101,6 +93,10 @@ uint32_t DMADest_Buffer[16];
  */
 int main(void)
 {
+	for (uint8_t i = 0; i < DMA_TRANSFER_SIZE; i++) {
+
+	}
+
 	cfg_gpio();
 	cfg_timers();
 	cfg_uart2();
@@ -261,6 +257,12 @@ void EINT3_IRQHandler(void)
 					stop();
 
 					distancia = velocidad * tiempo_s * 0.28;
+
+					DMASrc_Buffer[0] = ppm;
+					DMASrc_Buffer[1] = velocidad;
+					DMASrc_Buffer[2] = temperatura;
+					DMASrc_Buffer[3] = distancia;
+					DMASrc_Buffer[4] = tiempo_s;
 
 					on = 0;
 					vel_index = 0;
@@ -763,8 +765,8 @@ void cfg_dma(void)
 
 	dma_cfg.ChannelNum = 0;
 	dma_cfg.SrcMemAddr = (uint32_t)DMASrc_Buffer;
-	dma_cfg.DstMemAddr = (uint32_t)DMADest_Buffer;
-	dma_cfg.TransferSize = 16;
+	dma_cfg.DstMemAddr = (uint32_t)DMADst_Buffer;
+	dma_cfg.TransferSize = 1;
 	dma_cfg.TransferWidth = GPDMA_WIDTH_WORD;
 	dma_cfg.TransferType = GPDMA_TRANSFERTYPE_M2M;
 	dma_cfg.SrcConn = 0;
@@ -774,16 +776,6 @@ void cfg_dma(void)
 	GPDMA_Setup(&dma_cfg);
 
 	NVIC_EnableIRQ(DMA_IRQn);
-}
-
-void Buffer_Verify(void)
-{
-	uint32_t *src_addr = (uint32_t *)DMASrc_Buffer;
-	uint32_t *dest_addr = (uint32_t *)DMADest_Buffer;
-
-	for (uint8_t i = 0; i < 16; i++)
-		if (*src_addr++ != *dest_addr++)
-			while(1);
 }
 
 void DMA_IRQHandler(void)
