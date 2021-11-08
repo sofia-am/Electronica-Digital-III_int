@@ -44,11 +44,9 @@ void cfg_timers(void);
 void cfg_pwm(void);
 void cfg_uart2(void);
 void cfg_adc(void);
-void cfg_dma(void);
 void delay(void);
 void stop(void);
 void set_vel(uint8_t velocidad);
-void Buffer_Verify(void);
 
 uint8_t get_pressed_key(void);
 uint8_t get_digit(uint8_t, uint8_t);
@@ -85,20 +83,7 @@ uint32_t tiempo_s = 0;
 uint32_t distancia = 0;
 uint32_t p2aux = 0; // Copia auxiliar de la lectura del puerto 2 para antirrebote
 
-uint32_t DMASrc_Buffer[SIZE] =
-{
-	0x01020304,0x05060708,0x090A0B0C,0x0D0E0F10,
-	0x11121314,0x15161718,0x191A1B1C,0x1D1E1F20,
-	0x21222324,0x25262728,0x292A2B2C,0x2D2E2F30,
-	0x31323334,0x35363738,0x393A3B3C,0x3D3E3F40
-};
-
-uint32_t DMADest_Buffer[SIZE];
-
 float temperatura = 0.0;
-
-volatile uint32_t Channel0_TC;
-volatile uint32_t Channel0_Err;
 
 /**
  * @brief Función principal. Acá se configuran
@@ -106,16 +91,10 @@ volatile uint32_t Channel0_Err;
  */
 int main(void)
 {
-	for (uint8_t i = 0; i < 100; i++)
-		delay();
-
 	cfg_gpio();
 	cfg_timers();
 	cfg_uart2();
 	cfg_adc();
-
-	Channel0_TC = 0;
-	Channel0_Err = 0;
 
 	for (uint8_t i = 0; i < 10; i++)
 		buff[i] = 0;
